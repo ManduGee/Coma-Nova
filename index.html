@@ -1,0 +1,679 @@
+<title>COMA NOVA</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#000;overflow:hidden;}
+canvas{display:block;position:fixed;top:0;left:0;}
+#modeBtn{
+  position:fixed;bottom:24px;right:24px;z-index:100;
+  background:rgba(255,255,255,.08);color:#fff;
+  border:1px solid rgba(255,255,255,.22);
+  padding:9px 20px;font:11px "Helvetica Neue",sans-serif;
+  letter-spacing:2.5px;cursor:pointer;text-transform:uppercase;
+  backdrop-filter:blur(6px);transition:background .2s;user-select:none;
+  display:none;
+}
+#modeBtn:hover{background:rgba(255,255,255,.18);}
+#modeBtn.cam{border-color:rgba(255,220,80,.5);color:rgba(255,220,80,.9);}
+#camPreview{
+  position:fixed;bottom:72px;right:24px;width:128px;height:96px;
+  border:1px solid rgba(255,255,255,.18);display:none;
+  object-fit:cover;transform:scaleX(-1);opacity:.55;border-radius:2px;
+}
+#topExit{
+  position:fixed;top:0;left:0;width:100%;height:22vh;z-index:60;pointer-events:none;
+  background:linear-gradient(rgba(0,0,0,.88),rgba(0,0,0,0));
+  opacity:0;transition:opacity .55s ease;
+}
+#topExit.show{opacity:1;}
+#closeBtn{
+  position:absolute;top:26px;left:50%;width:34px;height:34px;margin-left:-17px;
+  cursor:pointer;pointer-events:none;opacity:.75;transition:opacity .2s,transform .2s;
+}
+#topExit.show #closeBtn{pointer-events:auto;}
+#closeBtn:hover{opacity:1;transform:scale(1.12);}
+#closeBtn::before,#closeBtn::after{
+  content:'';position:absolute;top:50%;left:50%;width:30px;height:1.5px;background:#fff;
+}
+#closeBtn::before{transform:translate(-50%,-50%) rotate(45deg);}
+#closeBtn::after{transform:translate(-50%,-50%) rotate(-45deg);}
+</style>
+<canvas id="cv"></canvas>
+<div id="topExit"><div id="closeBtn" title="처음으로"></div></div>
+<button id="modeBtn">CAMERA</button>
+<video id="camPreview" autoplay muted playsinline></video>
+<script>
+
+const SRC_L01='L01.png';
+const SRC_L02='L02.png';
+const SRC_W01='W01.png';
+const SRC_BIG='dot_big.png';
+const SRC_SML='dot_small.png';
+
+// ── constants ────────────────────────────────────────────────────────────────
+const DOT_SPACING=2,SCATTER_STR=5.5,DAMPING=.90,SPRING=.085,NOISE=.45;
+let   INFLUENCE_R=113;
+const LINE_H=18,BODY_DUR=3000,INTERACTIVE_T=5500,PARTICLE_DENSITY=.667;
+const CURTAIN_DUR=1500;  // 1.5초
+const WANDER_DUR=8000,SETTLE_DUR=900,EXPAND_DUR=1300,SPOT_R_BASE=105;
+
+// ── state ────────────────────────────────────────────────────────────────────
+let VW=0,VH=0,cW=0,cH=0;
+// phases: 0=l01-intro  1=wander  2=l02  3=curtain+w01intro  4=w01
+let phase=0,phaseT=0;
+let w01IntroPhase='intro',w01StartTime=0;
+const mouse={x:-9999,y:-9999,on:false};
+let particles=[],compCanvas=null,yellowDots=[];
+const zoom={active:false,progress:0,cx:0,cy:0,startTime:0,startProgress:0,direction:1,DURATION:1800,MAX_SCALE:5};
+let wanderP=null;
+const exitDot={x:-9999,y:-9999,r:0,hover:0};let interactiveAt=0,typeSources=[];
+// ── audio ─────────────────────────────────────────────────────────────────────
+let audioCtx=null,droneGain=null,droneOsc=null,droneLfo=null,droneActive=false;
+function initAudio(){
+  if(audioCtx)return;
+  audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+  // 드론: 저주파 사인파 + LFO 진폭변조
+  droneOsc=audioCtx.createOscillator();
+  droneOsc.type='sine';droneOsc.frequency.value=52;
+  droneLfo=audioCtx.createOscillator();
+  droneLfo.type='sine';droneLfo.frequency.value=0.9;
+  const lfoGain=audioCtx.createGain();lfoGain.gain.value=18;
+  droneLfo.connect(lfoGain);lfoGain.connect(droneOsc.frequency);
+  droneGain=audioCtx.createGain();droneGain.gain.value=0;
+  const droneFilter=audioCtx.createBiquadFilter();droneFilter.type='lowpass';droneFilter.frequency.value=320;
+  droneOsc.connect(droneFilter);droneFilter.connect(droneGain);droneGain.connect(audioCtx.destination);
+  droneOsc.start();droneLfo.start();
+}
+function droneTargetGain(){
+  // INFLUENCE_R 38~313 → gain 0.04~0.20
+  return 0.02+(INFLUENCE_R-38)/(313-38)*0.33;
+}
+function startDrone(){
+  if(!audioCtx)return;
+  const target=droneTargetGain();
+  if(droneActive){
+    // 볼륨만 업데이트
+    const now=audioCtx.currentTime;
+    droneGain.gain.cancelScheduledValues(now);
+    droneGain.gain.setValueAtTime(droneGain.gain.value,now);
+    droneGain.gain.linearRampToValueAtTime(target,now+0.06);
+    return;
+  }
+  droneActive=true;
+  const now=audioCtx.currentTime;
+  droneGain.gain.cancelScheduledValues(now);
+  droneGain.gain.setValueAtTime(droneGain.gain.value,now);
+  droneGain.gain.linearRampToValueAtTime(target,now+0.4);
+}
+function stopDrone(){
+  if(!audioCtx||!droneActive)return;
+  droneActive=false;
+  const now=audioCtx.currentTime;
+  droneGain.gain.cancelScheduledValues(now);
+  droneGain.gain.setValueAtTime(droneGain.gain.value,now);
+  droneGain.gain.linearRampToValueAtTime(0,now+0.18);
+}
+let typewriterScheduled=false;
+function scheduleTypewriter(){
+  if(!audioCtx||typewriterScheduled)return;
+  typewriterScheduled=true;typeSources=[];
+  // BODY_DUR(3000ms) 동안 타자 소리 스케줄링
+  const numClicks=Math.floor(BODY_DUR/LINE_H*1.1); // 라인 수 기준
+  const linesTotal=Math.ceil(3840/LINE_H); // 대략 높이/LINE_H
+  for(let i=0;i<linesTotal;i++){
+    const t=audioCtx.currentTime+(i/linesTotal)*BODY_DUR/1000;
+    // 각 줄마다 1~3개의 클릭 랜덤 배치
+    const clicks=1+Math.floor(Math.random()*3);
+    for(let c=0;c<clicks;c++){
+      const offset=t+c*(0.04+Math.random()*0.06);
+      playTypeClick(offset);
+    }
+  }
+}
+function playTypeClick(atTime){
+  if(!audioCtx)return;
+  const buf=audioCtx.createBuffer(1,audioCtx.sampleRate*0.04,audioCtx.sampleRate);
+  const d=buf.getChannelData(0);
+  for(let i=0;i<d.length;i++){
+    d[i]=(Math.random()*2-1)*Math.exp(-i/(audioCtx.sampleRate*0.008));
+  }
+  const src=audioCtx.createBufferSource();src.buffer=buf;
+  const filt=audioCtx.createBiquadFilter();filt.type='bandpass';filt.frequency.value=1800+Math.random()*800;filt.Q.value=0.8;
+  const g=audioCtx.createGain();g.gain.value=0.06+Math.random()*0.05;
+  src.connect(filt);filt.connect(g);g.connect(audioCtx.destination);
+  src.start(atTime);typeSources.push(src);
+}
+function cancelTypewriter(){for(const s of typeSources){try{s.stop();}catch(e){}}typeSources=[];}
+function playWhoosh(dir){
+  if(!audioCtx)return;
+  const now=audioCtx.currentTime,dur=1.4;
+  const buf=audioCtx.createBuffer(1,Math.floor(audioCtx.sampleRate*dur),audioCtx.sampleRate);
+  const d=buf.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
+  const src=audioCtx.createBufferSource();src.buffer=buf;
+  const bp=audioCtx.createBiquadFilter();bp.type='bandpass';bp.Q.value=1.1;
+  bp.frequency.setValueAtTime(dir>0?90:900,now);
+  bp.frequency.exponentialRampToValueAtTime(dir>0?900:90,now+dur*.85);
+  const g=audioCtx.createGain();
+  if(dir>0){g.gain.setValueAtTime(.0001,now);g.gain.exponentialRampToValueAtTime(.22,now+dur*.6);g.gain.exponentialRampToValueAtTime(.0001,now+dur);}
+  else{g.gain.setValueAtTime(.2,now);g.gain.exponentialRampToValueAtTime(.0001,now+dur);}
+  src.connect(bp);bp.connect(g);g.connect(audioCtx.destination);src.start(now);src.stop(now+dur+.05);
+  const o=audioCtx.createOscillator();o.type='sine';
+  o.frequency.setValueAtTime(dir>0?55:220,now);
+  o.frequency.exponentialRampToValueAtTime(dir>0?220:55,now+dur*.8);
+  const og=audioCtx.createGain();
+  if(dir>0){og.gain.setValueAtTime(.0001,now);og.gain.exponentialRampToValueAtTime(.12,now+dur*.45);og.gain.exponentialRampToValueAtTime(.0001,now+dur);}
+  else{og.gain.setValueAtTime(.12,now);og.gain.exponentialRampToValueAtTime(.0001,now+dur);}
+  o.connect(og);og.connect(audioCtx.destination);o.start(now);o.stop(now+dur+.05);
+}
+function playDing(){
+  if(!audioCtx)return;
+  const now=audioCtx.currentTime;
+  // 첫 번째 음: 부드러운 벨
+  const o1=audioCtx.createOscillator();const g1=audioCtx.createGain();
+  o1.type='sine';o1.frequency.value=880;
+  g1.gain.setValueAtTime(0,now);g1.gain.linearRampToValueAtTime(0.22,now+0.01);
+  g1.gain.exponentialRampToValueAtTime(0.001,now+1.2);
+  o1.connect(g1);g1.connect(audioCtx.destination);
+  o1.start(now);o1.stop(now+1.3);
+  // 두 번째 음: 약간 높은 배음
+  const o2=audioCtx.createOscillator();const g2=audioCtx.createGain();
+  o2.type='sine';o2.frequency.value=1320;
+  g2.gain.setValueAtTime(0,now+0.04);g2.gain.linearRampToValueAtTime(0.12,now+0.08);
+  g2.gain.exponentialRampToValueAtTime(0.001,now+0.9);
+  o2.connect(g2);g2.connect(audioCtx.destination);
+  o2.start(now+0.04);o2.stop(now+1.0);
+  // 세 번째: 짧은 어택 클릭감
+  const o3=audioCtx.createOscillator();const g3=audioCtx.createGain();
+  o3.type='sine';o3.frequency.value=440;
+  g3.gain.setValueAtTime(0.18,now);g3.gain.exponentialRampToValueAtTime(0.001,now+0.18);
+  o3.connect(g3);g3.connect(audioCtx.destination);
+  o3.start(now);o3.stop(now+0.2);
+}
+
+let isZoomedIn=false;
+let mouseMoving=false,_mouseMoveTimer=null;
+function onMouseActivity(){
+  mouseMoving=true;
+  clearTimeout(_mouseMoveTimer);
+  _mouseMoveTimer=setTimeout(()=>{mouseMoving=false;stopDrone();},80);
+}
+
+// camera
+let camMode=false,camVideo=null,camCanvas=null,camCtx=null,faceDetector=null,camPos=null;
+
+// ── canvas ───────────────────────────────────────────────────────────────────
+const cv=document.getElementById('cv');
+const ctx=cv.getContext('2d');
+
+function pBounds(vw,vh){
+  const AR=4500/8000;
+  if(vw/vh>AR){const dh=vh,dw=Math.floor(dh*AR);return{dx:Math.floor((vw-dw)/2),dy:0,dw,dh};}
+  const dw=vw,dh=Math.floor(dw/AR);return{dx:0,dy:Math.floor((vh-dh)/2),dw,dh};
+}
+function lBounds(vw,vh){
+  const AR=8000/4500;
+  if(vw/vh<AR){const dw=vw,dh=Math.floor(dw/AR);return{dx:0,dy:Math.floor((vh-dh)/2),dw,dh};}
+  const dh=vh,dw=Math.floor(dh*AR);return{dx:Math.floor((vw-dw)/2),dy:0,dw,dh};
+}
+function setFull(){
+  VW=window.innerWidth;VH=window.innerHeight;
+  cv.width=VW;cv.height=VH;cv.style.cssText='display:block;position:fixed;top:0;left:0;';
+}
+function enterW01(){
+  VW=window.innerWidth;VH=window.innerHeight;
+  const lb=lBounds(VW,VH);cW=lb.dw;cH=lb.dh;
+  cv.width=cW;cv.height=cH;
+  cv.style.cssText=`display:block;position:fixed;top:${lb.dy}px;left:${lb.dx}px;`;
+  w01IntroPhase='intro';w01StartTime=performance.now();
+  typewriterScheduled=false;scheduleTypewriter();
+}
+window.addEventListener('resize',()=>{
+  if(phase<3)setFull();
+  else{enterW01();if(compCanvas)buildCompositeAndParticles();if(yellowDots.length)buildYellowDots();}
+});
+
+// ── camera ───────────────────────────────────────────────────────────────────
+function updateModeBtnLabel(){
+  const btn=document.getElementById('modeBtn');
+  btn.textContent=camMode?'MOUSE':'CAMERA';
+  btn.classList.toggle('cam',camMode);
+}
+async function initCamera(){
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:320},height:{ideal:240},facingMode:'user'}});
+    camVideo=document.getElementById('camPreview');
+    camVideo.srcObject=stream;camVideo.style.display='block';
+    camCanvas=document.createElement('canvas');camCanvas.width=320;camCanvas.height=240;
+    camCtx=camCanvas.getContext('2d',{willReadFrequently:true});
+    if('FaceDetector'in window){try{faceDetector=new FaceDetector({fastMode:true,maxDetectedFaces:1});}catch(e){}}
+    camMode=true;updateModeBtnLabel();
+  }catch(e){alert('카메라 접근을 허용해주세요.\n(로컬 파일로 열면 작동합니다.)');}
+}
+function stopCamera(){
+  const v=document.getElementById('camPreview');
+  if(v&&v.srcObject){v.srcObject.getTracks().forEach(t=>t.stop());v.srcObject=null;}
+  if(v)v.style.display='none';
+  camMode=false;camPos=null;updateModeBtnLabel();
+}
+async function updateCamPos(){
+  if(!camMode||!camVideo||camVideo.readyState<2)return;
+  try{
+    camCtx.save();camCtx.scale(-1,1);camCtx.drawImage(camVideo,-320,0,320,240);camCtx.restore();
+    if(faceDetector){try{const faces=await faceDetector.detect(camCanvas);if(faces.length){const b=faces[0].boundingBox;camPos={x:(b.x+b.width/2)/320,y:(b.y+b.height/2)/240};return;}}catch(e){}}
+    const d=camCtx.getImageData(0,0,320,240).data;
+    let sx=0,sy=0,cnt=0;
+    for(let y=0;y<240;y+=3)for(let x=0;x<320;x+=3){
+      const i=(y*320+x)*4,r=d[i],g=d[i+1],b=d[i+2];
+      if(r>80&&g>40&&b>20&&r>g&&r>b&&r-b>15){sx+=x;sy+=y;cnt++;}
+    }
+    camPos=cnt>80?{x:sx/cnt/320,y:sy/cnt/240}:null;
+  }catch(e){camPos=null;}
+}
+function getSpotXY(){
+  if(camMode&&camPos)return{x:camPos.x*cW,y:camPos.y*cH};
+  return{x:mouse.x,y:mouse.y};
+}
+
+// ── wander (auto) ─────────────────────────────────────────────────────────────
+let dingPlayed=false;
+function initWander(){
+  dingPlayed=false;
+  const pb=pBounds(VW,VH);
+  wanderP={
+    sx:pb.dx+pb.dw*.50, sy:pb.dy+pb.dh*.50,
+    ax1:pb.dw*.30, ax2:pb.dw*.18, ax3:pb.dw*.10,
+    ay1:pb.dh*.38, ay2:pb.dh*.22, ay3:pb.dh*.10,
+    fx1:0.73, fx2:1.97, fx3:3.31,
+    fy1:1.11, fy2:2.43, fy3:0.59
+  };
+}
+function renderWander(){
+  if(!wanderP)initWander();
+  const pb=pBounds(VW,VH);
+  const{sx,sy,ax1,ax2,ax3,ay1,ay2,ay3,fx1,fx2,fx3,fy1,fy2,fy3}=wanderP;
+  const ts=phaseT/1000;
+  const wx=sx+ax1*Math.sin(fx1*ts)+ax2*Math.sin(fx2*ts)+ax3*Math.cos(fx3*ts);
+  const wy=sy+ay1*Math.cos(fy1*ts)+ay2*Math.sin(fy2*ts)+ay3*Math.sin(fy3*ts);
+  const M=30;
+  const sxC=Math.max(pb.dx+M,Math.min(pb.dx+pb.dw-M,wx));
+  const syC=Math.max(pb.dy+M,Math.min(pb.dy+pb.dh-M,wy));
+
+  let spotX,spotY,spotR,ringAlpha=1;
+  if(phaseT<=WANDER_DUR){
+    spotX=sxC;spotY=syC;spotR=SPOT_R_BASE+8*Math.sin(phaseT/300);
+    startDrone();
+  }else if(phaseT<=WANDER_DUR+SETTLE_DUR){
+    const sp=(phaseT-WANDER_DUR)/SETTLE_DUR;
+    const ease=1-(1-sp)**3;
+    spotX=sxC+(VW/2-sxC)*ease;spotY=syC+(VH/2-syC)*ease;
+    spotR=SPOT_R_BASE+8*Math.sin(phaseT/300);
+    startDrone();
+  }else{
+    const sp=Math.min(1,(phaseT-WANDER_DUR-SETTLE_DUR)/EXPAND_DUR);
+    const ease=1-(1-sp)**2;
+    const maxR=Math.sqrt(VW*VW+VH*VH)*1.05;
+    spotX=VW/2;spotY=VH/2;
+    spotR=SPOT_R_BASE+(maxR-SPOT_R_BASE)*ease;
+    ringAlpha=1-ease;
+    if(!dingPlayed){dingPlayed=true;stopDrone();playDing();}
+    if(sp>=1){phase=2;phaseT=0;}
+  }
+
+  ctx.fillStyle='#000';ctx.fillRect(0,0,VW,VH);
+  ctx.drawImage(imgL01,pb.dx,pb.dy,pb.dw,pb.dh);
+  ctx.save();ctx.beginPath();ctx.arc(spotX,spotY,spotR,0,Math.PI*2);ctx.clip();
+  ctx.drawImage(imgL02,pb.dx,pb.dy,pb.dw,pb.dh);ctx.restore();
+  if(ringAlpha>0.01){
+    ctx.save();ctx.globalAlpha=ringAlpha;ctx.filter='blur(18px)';
+    const g=ctx.createRadialGradient(spotX,spotY,spotR*.65,spotX,spotY,spotR*1.2);
+    g.addColorStop(0,'rgba(255,255,255,0)');g.addColorStop(.55,'rgba(255,255,255,.45)');g.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.fillStyle=g;ctx.beginPath();ctx.arc(spotX,spotY,spotR*1.2,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+  }
+}
+
+// ── curtain overlay (drawn on top of W01 canvas) ──────────────────────────────
+function renderCurtainOverlay(p){
+  const ease=p<.5?2*p*p:1-((-2*p+2)**2)/2;
+  // portrait width in W01 canvas space
+  const pW=cH*(4500/8000);
+  const leftEdge=(cW-pW)/2;
+  const rightEdge=(cW+pW)/2;
+  const leftW=Math.max(0,leftEdge*(1-ease));
+  const rightX=Math.min(cW,rightEdge+(cW-rightEdge)*ease);
+  const EW=40;
+  ctx.fillStyle='#000';
+  if(leftW>0)ctx.fillRect(0,0,leftW,cH);
+  if(rightX<cW)ctx.fillRect(rightX,0,cW-rightX,cH);
+  if(leftW>0){
+    const g=ctx.createLinearGradient(Math.max(0,leftW-EW),0,leftW,0);
+    g.addColorStop(0,'rgba(0,0,0,1)');g.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=g;ctx.fillRect(Math.max(0,leftW-EW),0,EW,cH);
+  }
+  if(rightX<cW){
+    const g=ctx.createLinearGradient(rightX,0,Math.min(cW,rightX+EW),0);
+    g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(0,0,0,1)');
+    ctx.fillStyle=g;ctx.fillRect(rightX,0,EW,cH);
+  }
+}
+
+// ── prompt ───────────────────────────────────────────────────────────────────
+function drawPrompt(alpha){
+  const pb=pBounds(VW,VH);
+  const cx=pb.dx+pb.dw/2,cy=pb.dy+pb.dh*.83,now=performance.now();
+  ctx.save();ctx.globalAlpha=alpha;
+  for(let i=0;i<3;i++){const t=((now/2200+i/3)%1);ctx.strokeStyle=`rgba(255,255,255,${(1-t)*.7})`;ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(cx,cy,14+t*54,0,Math.PI*2);ctx.stroke();}
+  ctx.fillStyle='rgba(255,255,255,.95)';ctx.beginPath();ctx.arc(cx,cy,7,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='rgba(0,0,0,.5)';ctx.beginPath();ctx.roundRect(cx-92,cy+42,184,34,5);ctx.fill();
+  ctx.font='12px "Helvetica Neue",Helvetica,Arial,sans-serif';ctx.fillStyle='rgba(255,255,255,.9)';ctx.textAlign='center';
+  ctx.fillText('더블클릭해보세요',cx,cy+63);ctx.restore();
+}
+
+// ── W01 particles ─────────────────────────────────────────────────────────────
+function mixedColor(p){const t=p.mixR;return{r:Math.round(p.r+(255-p.r)*t),g:Math.round(p.g+(255-p.g)*t),b:Math.round(p.b+(255-p.b)*t)};}
+
+function buildCompositeAndParticles(){
+  compCanvas=document.createElement('canvas');compCanvas.width=cW;compCanvas.height=cH;
+  const oc=compCanvas.getContext('2d');oc.fillStyle='#000';oc.fillRect(0,0,cW,cH);oc.drawImage(imgW01,0,0,cW,cH);
+  const sc=document.createElement('canvas');sc.width=cW;sc.height=cH;
+  const sctx=sc.getContext('2d',{willReadFrequently:true});
+  sctx.fillStyle='#000';sctx.fillRect(0,0,cW,cH);sctx.drawImage(imgW01,0,0,cW,cH);
+  const d=sctx.getImageData(0,0,cW,cH).data;
+  particles=[];
+  for(let y=0;y<cH;y+=DOT_SPACING)for(let x=0;x<cW;x+=DOT_SPACING){
+    if(Math.random()>PARTICLE_DENSITY)continue;
+    const i=(y*cW+x)*4,r=d[i],g=d[i+1],b=d[i+2];
+    const lum=.299*r+.587*g+.114*b,maxC=Math.max(r,g,b),sat=maxC?(maxC-Math.min(r,g,b))/maxC:0;
+    if(lum<=28&&sat<=.15)continue;
+    const s2=(x*1973+y*9301+49297)%233280,sr=s2/233280;
+    const size=sr<.60?1+sr*2.5:sr<.85?2.5+(sr-.60)*10:5+(sr-.85)*20;
+    particles.push({ox:x,oy:y,x,y,vx:0,vy:0,scatterT:0,r,g,b,size,mixR:.18+Math.random()*.5});
+  }
+}
+
+function applyParticles(){
+  const{x:mx,y:my}=getSpotXY();const on=camMode?!!camPos:mouse.on;const R=INFLUENCE_R,R2=R*R,active=[];
+  for(const p of particles){
+    const dx=mx-p.ox,dy=my-p.oy,d2=dx*dx+dy*dy,inZ=on&&d2<R2;
+    if(inZ){const d=Math.sqrt(d2)+.1,f=Math.pow(1-d/R,1.2)*SCATTER_STR;p.vx-=(dx/d)*f;p.vy-=(dy/d)*f;p.vx+=(Math.random()-.5)*NOISE*(f/SCATTER_STR);p.vy+=(Math.random()-.5)*NOISE*(f/SCATTER_STR);p.scatterT+=(Math.pow(1-Math.sqrt(d2)/R,1.2)-p.scatterT)*.10;}
+    else{p.vx+=(p.ox-p.x)*SPRING;p.vy+=(p.oy-p.y)*SPRING;p.scatterT+=(0-p.scatterT)*.14;}
+    p.vx*=DAMPING;p.vy*=DAMPING;p.x+=p.vx;p.y+=p.vy;
+    if(p.scatterT>.012)active.push(p);else{p.x=p.ox;p.y=p.oy;p.vx=0;p.vy=0;}
+  }
+  if(!active.length)return;
+  const cm=new Map();
+  for(const p of active){
+    const mc=mixedColor(p),k=((mc.r>>5)<<16)|((mc.g>>5)<<8)|(mc.b>>5);
+    if(!cm.has(k))cm.set(k,{c:mc,trail:[],flying:[]});
+    const grp=cm.get(k);
+    grp.trail.push({x:p.ox,y:p.oy,r:p.size*(.7+p.scatterT)+1.5});
+    if(!(p.x<-150||p.x>cW+150||p.y<-150||p.y>cH+150))grp.flying.push({x:p.x,y:p.y,r:p.size*(.55+p.scatterT*.55)});
+  }
+  for(const[,g]of cm){
+    ctx.fillStyle=`rgb(${g.c.r},${g.c.g},${g.c.b})`;ctx.beginPath();
+    for(const d of g.trail){ctx.moveTo(d.x+d.r,d.y);ctx.arc(d.x,d.y,d.r,0,Math.PI*2);}
+    for(const d of g.flying){ctx.moveTo(d.x+d.r,d.y);ctx.arc(d.x,d.y,d.r,0,Math.PI*2);}
+    ctx.fill();
+  }
+}
+
+function drawSpotlight(ox,oy,scale){
+  const s=scale||1;const{x:sx,y:sy}=getSpotXY();
+  const rmx=ox!==undefined?ox+sx*s:sx,rmy=oy!==undefined?oy+sy*s:sy,R=INFLUENCE_R*s;
+  ctx.save();ctx.filter='blur(12px)';
+  const gG=ctx.createRadialGradient(rmx,rmy,R*.5,rmx,rmy,R*1.08);
+  gG.addColorStop(0,'rgba(255,255,255,0)');gG.addColorStop(.6,'rgba(255,255,255,.45)');gG.addColorStop(1,'rgba(255,255,255,0)');
+  ctx.fillStyle=gG;ctx.beginPath();ctx.arc(rmx,rmy,R*1.08,0,Math.PI*2);ctx.fill();ctx.restore();
+  const cG=ctx.createRadialGradient(rmx,rmy,0,rmx,rmy,R*.72);
+  cG.addColorStop(0,'rgba(255,255,255,1)');cG.addColorStop(.32,'rgba(255,255,255,1)');
+  cG.addColorStop(.6,'rgba(255,255,255,.85)');cG.addColorStop(.85,'rgba(255,255,255,.3)');cG.addColorStop(1,'rgba(255,255,255,0)');
+  ctx.fillStyle=cG;ctx.beginPath();ctx.arc(rmx,rmy,R*.72,0,Math.PI*2);ctx.fill();
+}
+
+// ── yellow dots ──────────────────────────────────────────────────────────────
+function detectYellowSpecs(){
+  const STEP=4,gW=Math.ceil(cW/STEP),gH=Math.ceil(cH/STEP);
+  const sc=document.createElement('canvas');sc.width=cW;sc.height=cH;
+  const sctx=sc.getContext('2d',{willReadFrequently:true});sctx.drawImage(imgW01,0,0,cW,cH);
+  const d=sctx.getImageData(0,0,cW,cH).data;
+  const isY=(x,y)=>{const i=(y*cW+x)*4;return d[i]>180&&d[i+1]>180&&d[i+2]<80&&d[i+3]>100;};
+  const vis=new Uint8Array(gW*gH);const blobs=[];
+  for(let gy=0;gy<gH;gy++)for(let gx=0;gx<gW;gx++){
+    const idx=gy*gW+gx;if(vis[idx])continue;
+    if(!isY(gx*STEP,gy*STEP)){vis[idx]=1;continue;}
+    const q=[[gx,gy]];vis[idx]=1;let sx=0,sy=0,cnt=0;
+    while(q.length){const[cx,cy]=q.shift();sx+=cx*STEP;sy+=cy*STEP;cnt++;
+      for(const[nx,ny]of[[cx+1,cy],[cx-1,cy],[cx,cy+1],[cx,cy-1]]){
+        if(nx<0||ny<0||nx>=gW||ny>=gH)continue;const ni=ny*gW+nx;if(vis[ni])continue;vis[ni]=1;if(isY(nx*STEP,ny*STEP))q.push([nx,ny]);
+      }}
+    if(cnt>20)blobs.push({cx:sx/cnt,cy:sy/cnt,area:cnt});
+  }
+  if(!blobs.length)return[];
+  blobs.sort((a,b)=>b.area-a.area);const thresh=blobs[0].area*.3;
+  return blobs.map(b=>({x:b.cx/cW,y:b.cy/cH,kind:b.area>=thresh?'big':'small'}));
+}
+function buildYellowDots(){
+  yellowDots=detectYellowSpecs().map(s=>({
+    spec:s,img:s.kind==='big'?imgBig:imgSml,
+    alpha:Math.random(),target:Math.random(),timer:Math.random()*400,
+    flickerLerp:.06+Math.random()*.28,flickerMin:Math.random()*.22,
+    timerMin:40+Math.random()*100,timerRange:100+Math.random()*550,
+    phX:Math.random()*Math.PI*2,phY:Math.random()*Math.PI*2,
+    ph2X:Math.random()*Math.PI*2,ph2Y:Math.random()*Math.PI*2,
+    fX:.00009+Math.random()*.001,fY:.00009+Math.random()*.001,
+    aX:.018+Math.random()*.11,aY:.018+Math.random()*.11
+  }));
+}
+function tickYellowDots(dt){for(const d of yellowDots){d.timer-=dt;if(d.timer<=0){d.target=d.flickerMin+Math.random()*(1-d.flickerMin);d.timer=d.timerMin+Math.random()*d.timerRange;}d.alpha+=(d.target-d.alpha)*d.flickerLerp;}}
+function yellowPos(d,now,scale,ix,iy){
+  const s=d.spec,ox=s.x*cW,oy=s.y*cH;
+  const ddx=(Math.sin(d.fX*now+d.phX)+.37*Math.sin(d.fX*2.6*now+d.ph2X))*d.aX*cW;
+  const ddy=(Math.sin(d.fY*now+d.phY)+.37*Math.sin(d.fY*2.6*now+d.ph2Y))*d.aY*cH;
+  const sc=scale||1,dx0=ix||0,dy0=iy||0;
+  return{x:(ox+ddx)*sc+dx0,y:(oy+ddy)*sc+dy0,w:d.img.naturalWidth*sc,h:d.img.naturalHeight*sc};
+}
+function drawYellowDots(now,scale,ix,iy){for(const d of yellowDots){const{x,y,w,h}=yellowPos(d,now,scale,ix,iy);ctx.globalAlpha=d.alpha;ctx.drawImage(d.img,x-w/2,y-h/2,w,h);ctx.globalAlpha=1;}}
+
+// ── zoom ─────────────────────────────────────────────────────────────────────
+function startZoomIn(cx,cy){zoom.cx=cx;zoom.cy=cy;zoom.direction=1;zoom.active=true;zoom.startProgress=zoom.progress;zoom.startTime=performance.now();}
+function startZoomOut(){zoom.direction=-1;zoom.active=true;zoom.startProgress=zoom.progress;zoom.startTime=performance.now();for(const p of particles){p.vx*=.25;p.vy*=.25;}}
+function renderZoom(now,dt){
+  const el=now-zoom.startTime,t=Math.min(1,el/zoom.DURATION);
+  if(zoom.direction===1){zoom.progress=zoom.startProgress+(1-zoom.startProgress)*(1-Math.pow(1-t,2.8));}
+  else{zoom.progress=zoom.startProgress*Math.pow(1-t,2.8);if(t>=1){zoom.active=false;zoom.progress=0;isZoomedIn=false;for(const p of particles){p.x=p.ox;p.y=p.oy;p.vx=0;p.vy=0;p.scatterT=0;}return;}}
+  const scale=1+zoom.progress*(zoom.MAX_SCALE-1),ix=zoom.cx*(1-scale),iy=zoom.cy*(1-scale);
+  ctx.fillStyle='#000';ctx.fillRect(0,0,cW,cH);
+  ctx.drawImage(compCanvas,ix,iy,cW*scale,cH*scale);
+  tickYellowDots(dt);drawYellowDots(now,scale,ix,iy);
+  const{x:mx,y:my}=getSpotXY();const on=camMode?!!camPos:mouse.on;const R=INFLUENCE_R,active=[];
+  for(const p of particles){
+    const dx=mx-p.ox,dy=my-p.oy,d2=dx*dx+dy*dy,inZ=on&&d2<R*R;
+    if(inZ){const d=Math.sqrt(d2)+.1,f=Math.pow(1-d/R,1.2)*SCATTER_STR;p.vx-=(dx/d)*f;p.vy-=(dy/d)*f;p.scatterT+=(Math.pow(1-d/R,1.2)-p.scatterT)*.10;}
+    else{p.vx+=(p.ox-p.x)*SPRING;p.vy+=(p.oy-p.y)*SPRING;p.scatterT+=(0-p.scatterT)*.14;}
+    p.vx*=DAMPING;p.vy*=DAMPING;p.x+=p.vx;p.y+=p.vy;
+    if(p.scatterT>.012)active.push(p);else{p.x=p.ox;p.y=p.oy;p.vx=0;p.vy=0;}
+  }
+  if(active.length){
+    const cm=new Map();
+    for(const p of active){
+      const mc=mixedColor(p),k=((mc.r>>5)<<16)|((mc.g>>5)<<8)|(mc.b>>5);
+      if(!cm.has(k))cm.set(k,{c:mc,trail:[],flying:[]});const grp=cm.get(k);
+      grp.trail.push({x:ix+p.ox*scale,y:iy+p.oy*scale,r:(p.size*(.7+p.scatterT)+1.5)*scale});
+      const tx=ix+p.x*scale,ty=iy+p.y*scale;
+      if(!(tx<-150||tx>cW+150||ty<-150||ty>cH+150))grp.flying.push({x:tx,y:ty,r:p.size*(.55+p.scatterT*.55)*scale});
+    }
+    for(const[,g]of cm){
+      ctx.fillStyle=`rgb(${g.c.r},${g.c.g},${g.c.b})`;ctx.beginPath();
+      for(const d of g.trail){ctx.moveTo(d.x+d.r,d.y);ctx.arc(d.x,d.y,d.r,0,Math.PI*2);}
+      for(const d of g.flying){ctx.moveTo(d.x+d.r,d.y);ctx.arc(d.x,d.y,d.r,0,Math.PI*2);}
+      ctx.fill();
+    }
+  }
+  if(on)drawSpotlight(ix,iy,scale);
+  drawExitDot(now);
+}
+
+// ── W01 intro ────────────────────────────────────────────────────────────────
+function renderW01Intro(){
+  ctx.fillStyle='#000';ctx.fillRect(0,0,cW,cH);
+  const el=performance.now()-w01StartTime,prog=Math.min(1,el/BODY_DUR);
+  const lp=prog*Math.ceil(cH/LINE_H),curLine=Math.floor(lp),lx=(lp-curLine)*cW,revY=curLine*LINE_H;
+  if(revY>0){ctx.save();ctx.beginPath();ctx.rect(0,0,cW,revY);ctx.clip();ctx.drawImage(imgW01,0,0,cW,cH);ctx.restore();}
+  if(lx>0&&revY<cH){ctx.save();ctx.beginPath();ctx.rect(0,revY,lx,LINE_H);ctx.clip();ctx.drawImage(imgW01,0,0,cW,cH);ctx.restore();}
+  ctx.fillStyle='rgba(220,220,220,.7)';ctx.fillRect(Math.max(0,lx-1),revY,2,LINE_H);
+  if(el>INTERACTIVE_T){
+    w01IntroPhase='interactive';interactiveAt=performance.now();exitDot.hover=0;
+    buildCompositeAndParticles();
+    buildYellowDots();
+    document.getElementById('modeBtn').style.display='block';
+  }
+}
+function renderW01Interactive(now,dt){
+  if(zoom.active){renderZoom(now,dt);return;}
+  ctx.fillStyle='#000';ctx.fillRect(0,0,cW,cH);
+  ctx.drawImage(compCanvas,0,0,cW,cH);
+  tickYellowDots(dt);drawYellowDots(now);
+  applyParticles();
+  const on=camMode?!!camPos:mouse.on;
+  if(on){drawSpotlight();if(mouseMoving)startDrone();}else if(!mouseMoving){stopDrone();}
+  drawExitDot(now);
+}
+
+// ── exit dot / reset ─────────────────────────────────────────────────────────
+function drawExitDot(now){
+  if(w01IntroPhase!=='interactive')return;
+  const el=now-interactiveAt;
+  const appear=Math.min(1,Math.max(0,(el-800)/1000));if(appear<=0)return;
+  const x=cW*.045,y=cH*.92+Math.sin(now/900)*cH*.004;
+  const base=Math.max(14,cW*.012);
+  const{x:sx,y:sy}=getSpotXY();const on=camMode?!!camPos:mouse.on;
+  const want=(on&&Math.hypot(sx-x,sy-y)<base*3)?1:0;
+  exitDot.hover+=(want-exitDot.hover)*.12;
+  const pt=(el%5000)/1000;
+  const pulse=pt<1.2?Math.sin(pt/1.2*Math.PI):0;
+  const h=exitDot.hover,size=base*(1+.06*Math.sin(now/380)+.55*pulse)*(1+.7*h);
+  ctx.save();ctx.globalAlpha=appear;
+  const gr=size*(1.6+h*1.2);
+  const g=ctx.createRadialGradient(x,y,size*.3,x,y,gr);
+  g.addColorStop(0,`rgba(255,230,80,${.35+.35*h})`);g.addColorStop(1,'rgba(255,230,80,0)');
+  ctx.fillStyle=g;ctx.beginPath();ctx.arc(x,y,gr,0,Math.PI*2);ctx.fill();
+  if(pulse>0){const rr=base*(1.2+pt/1.2*3.2);ctx.strokeStyle=`rgba(255,235,110,${(1-pt/1.2)*.6})`;ctx.lineWidth=1.2;ctx.beginPath();ctx.arc(x,y,rr,0,Math.PI*2);ctx.stroke();}
+  if(h>.05){ctx.strokeStyle=`rgba(255,240,140,${.7*h})`;ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(x,y,size*1.25,0,Math.PI*2);ctx.stroke();}
+  ctx.drawImage(imgSml,x-size/2,y-size/2,size,size);
+  ctx.restore();
+  cv.style.cursor=h>.5?'pointer':'';
+  exitDot.x=x;exitDot.y=y;exitDot.r=size;
+}
+function hitExitDot(cx,cy){
+  return w01IntroPhase==='interactive'&&Math.hypot(cx-exitDot.x,cy-exitDot.y)<Math.max(exitDot.r*1.6,cW*.025);
+}
+function resetToStart(){
+  stopDrone();cancelTypewriter();
+  if(camMode)stopCamera();
+  zoom.active=false;zoom.progress=0;isZoomedIn=false;
+  mouseMoving=false;clearTimeout(_mouseMoveTimer);
+  particles=[];compCanvas=null;yellowDots=[];
+  w01IntroPhase='intro';w01StartTime=0;typewriterScheduled=false;
+  wanderP=null;dingPlayed=false;INFLUENCE_R=113;
+  exitDot.hover=0;exitDot.x=exitDot.y=-9999;
+  document.getElementById('modeBtn').style.display='none';
+  cv.style.cursor='';topShown=false;topExit.classList.remove('show');
+  phase=0;phaseT=0;setFull();
+}
+
+// ── main loop ────────────────────────────────────────────────────────────────
+let _lastT=0;
+function loop(ts){
+  const dt=Math.min(ts-_lastT,50);_lastT=ts;
+  if(phase<3)phaseT+=dt;  // only count phaseT for pre-W01 phases
+  if(phase===3)phaseT+=dt;  // curtain timer
+  const now=performance.now();
+  if(camMode)updateCamPos();
+
+  if(phase===0){
+    ctx.fillStyle='#000';ctx.fillRect(0,0,VW,VH);
+    const pb=pBounds(VW,VH);ctx.drawImage(imgL01,pb.dx,pb.dy,pb.dw,pb.dh);
+    drawPrompt(Math.min(1,phaseT/1000));
+
+  }else if(phase===1){
+    renderWander();
+
+  }else if(phase===2){
+    ctx.fillStyle='#000';ctx.fillRect(0,0,VW,VH);
+    const pb=pBounds(VW,VH);ctx.drawImage(imgL02,pb.dx,pb.dy,pb.dw,pb.dh);
+    if(phaseT>3000){
+      // transition: switch to W01 canvas NOW, start intro AND curtain simultaneously
+      phase=3;phaseT=0;
+      enterW01();
+    }
+
+  }else if(phase===3){
+    // W01 intro animation runs, curtain overlay on top
+    if(w01IntroPhase==='intro')renderW01Intro();
+    else renderW01Interactive(now,dt);
+    // curtain overlay (1.5s)
+    const cp=Math.min(1,phaseT/CURTAIN_DUR);
+    renderCurtainOverlay(cp);
+    if(cp>=1){phase=4;phaseT=0;}
+
+  }else if(phase===4){
+    if(w01IntroPhase==='intro')renderW01Intro();
+    else renderW01Interactive(now,dt);
+  }
+
+  requestAnimationFrame(loop);
+}
+
+// ── images ───────────────────────────────────────────────────────────────────
+const imgL01=new Image(),imgL02=new Image(),imgW01=new Image(),imgBig=new Image(),imgSml=new Image();
+let _loaded=0;
+function onLoad(){_loaded++;if(_loaded===5){setFull();requestAnimationFrame(loop);}}
+[imgL01,imgL02,imgW01,imgBig,imgSml].forEach(i=>i.onload=onLoad);
+imgL01.src=SRC_L01;imgL02.src=SRC_L02;imgW01.src=SRC_W01;imgBig.src=SRC_BIG;imgSml.src=SRC_SML;
+
+// ── events ───────────────────────────────────────────────────────────────────
+cv.addEventListener('mousemove',e=>{if(audioCtx&&audioCtx.state==='suspended')audioCtx.resume();if(phase>=3&&w01IntroPhase==='interactive')onMouseActivity();
+  if(phase>=3){const r=cv.getBoundingClientRect();mouse.x=(e.clientX-r.left)*(cW/r.width);mouse.y=(e.clientY-r.top)*(cH/r.height);}
+  else{mouse.x=e.clientX;mouse.y=e.clientY;}
+  mouse.on=true;
+});
+cv.addEventListener('mouseenter',()=>mouse.on=true);
+cv.addEventListener('mouseleave',()=>mouse.on=false);
+
+window.addEventListener('wheel',e=>{
+  if(phase!==4||w01IntroPhase!=='interactive')return;
+  e.preventDefault();
+  INFLUENCE_R=Math.max(38,Math.min(313,INFLUENCE_R+(e.deltaY>0?-8:8)));
+  if(droneActive)startDrone(); // 볼륨 즉시 반영
+},{passive:false});
+
+cv.addEventListener('dblclick',e=>{
+  if(phase===0){phase=1;phaseT=0;initWander();initAudio();return;}
+  if(phase===4&&w01IntroPhase==='interactive'){
+    const r=cv.getBoundingClientRect();
+    const cx=(e.clientX-r.left)*(cW/r.width),cy=(e.clientY-r.top)*(cH/r.height);
+    if(hitExitDot(cx,cy)){playDing();resetToStart();return;}
+    if(!isZoomedIn){startZoomIn(cx,cy);isZoomedIn=true;playWhoosh(1);}else{startZoomOut();isZoomedIn=false;playWhoosh(-1);}
+  }
+});
+
+const topExit=document.getElementById('topExit');
+let _topTimer=null,_topHideTimer=null,topShown=false;
+window.addEventListener('mousemove',e=>{
+  const inZone=phase>0&&e.clientY<Math.max(80,window.innerHeight*.14);
+  if(inZone||(topShown&&e.clientY<window.innerHeight*.22)){
+    clearTimeout(_topHideTimer);_topHideTimer=null;
+    if(!topShown&&!_topTimer)_topTimer=setTimeout(()=>{topShown=true;topExit.classList.add('show');_topTimer=null;},1000);
+  }else{
+    clearTimeout(_topTimer);_topTimer=null;
+    if(topShown&&!_topHideTimer)_topHideTimer=setTimeout(()=>{topShown=false;topExit.classList.remove('show');_topHideTimer=null;},350);
+  }
+});
+document.getElementById('closeBtn').addEventListener('click',e=>{
+  e.stopPropagation();topShown=false;topExit.classList.remove('show');
+  if(phase!==0){playDing();resetToStart();}
+});
+document.getElementById('modeBtn').addEventListener('click',e=>{
+  e.stopPropagation();
+  if(camMode)stopCamera();else initCamera();
+});
+</script>
