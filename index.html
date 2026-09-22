@@ -20,19 +20,21 @@ canvas{display:block;position:fixed;top:0;left:0;}
   object-fit:cover;transform:scaleX(-1);opacity:.55;border-radius:2px;
 }
 #topExit{
-  position:fixed;top:0;left:0;width:100%;height:22vh;z-index:60;pointer-events:none;
+  position:fixed;top:0;left:0;width:100%;height:26vh;z-index:60;pointer-events:none;
   background:linear-gradient(rgba(0,0,0,.88),rgba(0,0,0,0));
   opacity:0;transition:opacity .55s ease;
 }
 #topExit.show{opacity:1;}
 #closeBtn{
-  position:absolute;top:26px;left:50%;width:34px;height:34px;margin-left:-17px;
-  cursor:pointer;pointer-events:none;opacity:.75;transition:opacity .2s,transform .2s;
+  position:absolute;top:11.6vh;right:2.1vw;width:2.8vw;height:2.8vw;
+  min-width:30px;min-height:30px;
+  cursor:pointer;pointer-events:none;opacity:.9;transition:opacity .2s,transform .2s;
 }
 #topExit.show #closeBtn{pointer-events:auto;}
 #closeBtn:hover{opacity:1;transform:scale(1.12);}
 #closeBtn::before,#closeBtn::after{
-  content:'';position:absolute;top:50%;left:50%;width:30px;height:1.5px;background:#fff;
+  content:'';position:absolute;top:50%;left:50%;
+  width:3.9vw;min-width:42px;height:.42vw;min-height:4px;background:#fff;border-radius:2px;
 }
 #closeBtn::before{transform:translate(-50%,-50%) rotate(45deg);}
 #closeBtn::after{transform:translate(-50%,-50%) rotate(-45deg);}
@@ -548,15 +550,12 @@ function drawExitDot(now){
   const{x:sx,y:sy}=getSpotXY();const on=camMode?!!camPos:mouse.on;
   const want=(on&&Math.hypot(sx-x,sy-y)<base*3)?1:0;
   exitDot.hover+=(want-exitDot.hover)*.12;
-  const pt=(el%5000)/1000;
-  const pulse=pt<1.2?Math.sin(pt/1.2*Math.PI):0;
-  const h=exitDot.hover,size=base*(1+.06*Math.sin(now/380)+.55*pulse)*(1+.7*h);
+  const h=exitDot.hover,size=base*(1+.06*Math.sin(now/380))*(1+.7*h);
   ctx.save();ctx.globalAlpha=appear;
   const gr=size*(1.6+h*1.2);
   const g=ctx.createRadialGradient(x,y,size*.3,x,y,gr);
   g.addColorStop(0,`rgba(255,230,80,${.35+.35*h})`);g.addColorStop(1,'rgba(255,230,80,0)');
   ctx.fillStyle=g;ctx.beginPath();ctx.arc(x,y,gr,0,Math.PI*2);ctx.fill();
-  if(pulse>0){const rr=base*(1.2+pt/1.2*3.2);ctx.strokeStyle=`rgba(255,235,110,${(1-pt/1.2)*.6})`;ctx.lineWidth=1.2;ctx.beginPath();ctx.arc(x,y,rr,0,Math.PI*2);ctx.stroke();}
   if(h>.05){ctx.strokeStyle=`rgba(255,240,140,${.7*h})`;ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(x,y,size*1.25,0,Math.PI*2);ctx.stroke();}
   ctx.drawImage(imgSml,x-size/2,y-size/2,size,size);
   ctx.restore();
@@ -659,8 +658,8 @@ cv.addEventListener('dblclick',e=>{
 const topExit=document.getElementById('topExit');
 let _topTimer=null,_topHideTimer=null,topShown=false;
 window.addEventListener('mousemove',e=>{
-  const inZone=phase>0&&e.clientY<Math.max(80,window.innerHeight*.14);
-  if(inZone||(topShown&&e.clientY<window.innerHeight*.22)){
+  const inZone=phase>0&&e.clientY<Math.max(110,window.innerHeight*.18);
+  if(inZone||(topShown&&e.clientY<window.innerHeight*.26)){
     clearTimeout(_topHideTimer);_topHideTimer=null;
     if(!topShown&&!_topTimer)_topTimer=setTimeout(()=>{topShown=true;topExit.classList.add('show');_topTimer=null;},1000);
   }else{
