@@ -139,14 +139,17 @@ function applyParticles(){
 
 function drawSpotlight(){
   const rmx=mouse.x,rmy=mouse.y,R=INFLUENCE_R;
-  ctx.save();ctx.filter='blur(12px)';
-  const gG=ctx.createRadialGradient(rmx,rmy,R*.5,rmx,rmy,R*1.08);
-  gG.addColorStop(0,'rgba(255,255,255,0)');gG.addColorStop(.6,'rgba(255,255,255,.45)');gG.addColorStop(1,'rgba(255,255,255,0)');
-  ctx.fillStyle=gG;ctx.beginPath();ctx.arc(rmx,rmy,R*1.08,0,Math.PI*2);ctx.fill();ctx.restore();
-  const cG=ctx.createRadialGradient(rmx,rmy,0,rmx,rmy,R*.9);
-  cG.addColorStop(0,'rgba(255,255,255,1)');cG.addColorStop(.5,'rgba(255,255,255,1)');
-  cG.addColorStop(.72,'rgba(255,255,255,.85)');cG.addColorStop(.9,'rgba(255,255,255,.3)');cG.addColorStop(1,'rgba(255,255,255,0)');
-  ctx.fillStyle=cG;ctx.beginPath();ctx.arc(rmx,rmy,R*.9,0,Math.PI*2);ctx.fill();
+  ctx.save();ctx.filter=`blur(${Math.max(10,R*.14)}px)`;
+  const gG=ctx.createRadialGradient(rmx,rmy,R*.5,rmx,rmy,R*1.16);
+  gG.addColorStop(0,'rgba(255,255,255,0)');gG.addColorStop(.55,'rgba(255,255,255,.40)');gG.addColorStop(1,'rgba(255,255,255,0)');
+  ctx.fillStyle=gG;ctx.beginPath();ctx.arc(rmx,rmy,R*1.16,0,Math.PI*2);ctx.fill();
+  const cG=ctx.createRadialGradient(rmx,rmy,0,rmx,rmy,R);
+  cG.addColorStop(0,'rgba(255,255,255,1)');cG.addColorStop(.40,'rgba(255,255,255,1)');
+  cG.addColorStop(.56,'rgba(255,255,255,.82)');cG.addColorStop(.70,'rgba(255,255,255,.52)');
+  cG.addColorStop(.84,'rgba(255,255,255,.24)');cG.addColorStop(.94,'rgba(255,255,255,.08)');
+  cG.addColorStop(1,'rgba(255,255,255,0)');
+  ctx.fillStyle=cG;ctx.beginPath();ctx.arc(rmx,rmy,R,0,Math.PI*2);ctx.fill();
+  ctx.restore();
 }
 
 // 손전등처럼 가장자리가 번지도록, 오프스크린에서 L02를 방사형 알파로 깎아낸 뒤 합성
@@ -160,9 +163,9 @@ function drawSoftReveal(){
   maskCtx.drawImage(revealCanvas,-ox,-oy);
   maskCtx.globalCompositeOperation='destination-in';
   const g=maskCtx.createRadialGradient(pad,pad,0,pad,pad,R*1.22);
-  g.addColorStop(0,'rgba(0,0,0,1)');g.addColorStop(.55,'rgba(0,0,0,1)');
-  g.addColorStop(.72,'rgba(0,0,0,.82)');g.addColorStop(.88,'rgba(0,0,0,.34)');
-  g.addColorStop(1,'rgba(0,0,0,0)');
+  g.addColorStop(0,'rgba(0,0,0,1)');g.addColorStop(.42,'rgba(0,0,0,1)');
+  g.addColorStop(.60,'rgba(0,0,0,.80)');g.addColorStop(.76,'rgba(0,0,0,.46)');
+  g.addColorStop(.90,'rgba(0,0,0,.16)');g.addColorStop(1,'rgba(0,0,0,0)');
   maskCtx.fillStyle=g;maskCtx.fillRect(0,0,size,size);
   maskCtx.globalCompositeOperation='source-over';
   ctx.drawImage(maskCanvas,ox,oy);
