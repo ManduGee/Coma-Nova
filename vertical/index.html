@@ -142,14 +142,14 @@ function drawSpotlight(){
   ctx.save();ctx.filter=`blur(${Math.max(10,R*.14)}px)`;
   const gG=ctx.createRadialGradient(rmx,rmy,R*.5,rmx,rmy,R*1.16);
   gG.addColorStop(0,'rgba(255,255,255,0)');gG.addColorStop(.55,'rgba(255,255,255,.40)');gG.addColorStop(1,'rgba(255,255,255,0)');
-  ctx.fillStyle=gG;ctx.beginPath();ctx.arc(rmx,rmy,R*1.16,0,Math.PI*2);ctx.fill();
-  const cG=ctx.createRadialGradient(rmx,rmy,0,rmx,rmy,R);
-  cG.addColorStop(0,'rgba(255,255,255,1)');cG.addColorStop(.40,'rgba(255,255,255,1)');
-  cG.addColorStop(.56,'rgba(255,255,255,.82)');cG.addColorStop(.70,'rgba(255,255,255,.52)');
-  cG.addColorStop(.84,'rgba(255,255,255,.24)');cG.addColorStop(.94,'rgba(255,255,255,.08)');
-  cG.addColorStop(1,'rgba(255,255,255,0)');
-  ctx.fillStyle=cG;ctx.beginPath();ctx.arc(rmx,rmy,R,0,Math.PI*2);ctx.fill();
-  ctx.restore();
+  ctx.fillStyle=gG;ctx.beginPath();ctx.arc(rmx,rmy,R*1.16,0,Math.PI*2);ctx.fill();ctx.restore();
+  // 코어는 블러 없이 — 블러를 걸면 흰색이 번져 회색이 된다. 긴 다단 꼬리로 테두리를 없앤다
+  const cG=ctx.createRadialGradient(rmx,rmy,0,rmx,rmy,R*1.08);
+  cG.addColorStop(0,'rgba(255,255,255,1)');cG.addColorStop(.54,'rgba(255,255,255,1)');
+  cG.addColorStop(.64,'rgba(255,255,255,.92)');cG.addColorStop(.73,'rgba(255,255,255,.74)');
+  cG.addColorStop(.82,'rgba(255,255,255,.50)');cG.addColorStop(.90,'rgba(255,255,255,.28)');
+  cG.addColorStop(.96,'rgba(255,255,255,.11)');cG.addColorStop(1,'rgba(255,255,255,0)');
+  ctx.fillStyle=cG;ctx.beginPath();ctx.arc(rmx,rmy,R*1.08,0,Math.PI*2);ctx.fill();
 }
 
 // 손전등처럼 가장자리가 번지도록, 오프스크린에서 L02를 방사형 알파로 깎아낸 뒤 합성
