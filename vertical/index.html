@@ -149,13 +149,29 @@ function drawSpotlight(){
   ctx.fillStyle=cG;ctx.beginPath();ctx.arc(rmx,rmy,R*.72,0,Math.PI*2);ctx.fill();
 }
 
+// 손전등처럼 가장자리가 번지도록, 오프스크린에서 L02를 방사형 알파로 깎아낸 뒤 합성
+let maskCanvas=null,maskCtx=null;
+function drawSoftReveal(){
+  const R=INFLUENCE_R,pad=Math.ceil(R*1.3),size=pad*2;
+  if(!maskCanvas){maskCanvas=document.createElement('canvas');maskCtx=maskCanvas.getContext('2d');}
+  if(maskCanvas.width!==size){maskCanvas.width=size;maskCanvas.height=size;}
+  const ox=mouse.x-pad,oy=mouse.y-pad;
+  maskCtx.clearRect(0,0,size,size);
+  maskCtx.drawImage(revealCanvas,-ox,-oy);
+  maskCtx.globalCompositeOperation='destination-in';
+  const g=maskCtx.createRadialGradient(pad,pad,0,pad,pad,R*1.22);
+  g.addColorStop(0,'rgba(0,0,0,1)');g.addColorStop(.55,'rgba(0,0,0,1)');
+  g.addColorStop(.72,'rgba(0,0,0,.82)');g.addColorStop(.88,'rgba(0,0,0,.34)');
+  g.addColorStop(1,'rgba(0,0,0,0)');
+  maskCtx.fillStyle=g;maskCtx.fillRect(0,0,size,size);
+  maskCtx.globalCompositeOperation='source-over';
+  ctx.drawImage(maskCanvas,ox,oy);
+}
+
 function renderInteractive(){
   ctx.fillStyle='#000';ctx.fillRect(0,0,cW,cH);
   ctx.drawImage(baseCanvas,0,0);
-  if(mouse.on){
-    ctx.save();ctx.beginPath();ctx.arc(mouse.x,mouse.y,INFLUENCE_R,0,Math.PI*2);ctx.clip();
-    ctx.drawImage(revealCanvas,0,0);ctx.restore();
-  }
+  if(mouse.on)drawSoftReveal();
   applyParticles();
   if(mouse.on)drawSpotlight();
 }
