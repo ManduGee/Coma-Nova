@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<title>SPOT LIGHT</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#000;overflow:hidden;}
+canvas{display:block;position:fixed;top:0;left:0;}
+</style>
+</head>
+<canvas id="cv"></canvas>
+<script>
+const SRC_L01='../L01.png';
+const SRC_L02='../L02.png';
+
+const SPOT_R_BASE=105;
+let VW=0,VH=0;
+// phases: 0=intro  1=wander(무한 반복)
+let phase=0,phaseT=0;
+let wanderP=null;
+
+// ── audio ─────────────────────────────────────────────────────────────────────
+let audioCtx=null,droneGain=null,droneOsc=null,droneLfo=null,droneActive=false;
+function initAudio(){
+  if(audioCtx)return;
+  audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+  droneOsc=audioCtx.createOscillator();
+  droneOsc.type='sine';droneOsc.frequency.value=52;
+  droneLfo=audioCtx.createOscillator();
+  droneLfo.type='sine';droneLfo.frequency.value=0.9;
+  const lfoGain=audioCtx.createGain();lfoGain.gain.value=18;
+  droneLfo.connect(lfoGain);lfoGain.connect(droneOsc.frequency);
+  droneGain=audioCtx.createGain();droneGain.gain.value=0;
+  const droneFilter=audioCtx.createBiquadFilter();droneFilter.type='lowpass';droneFilter.frequency.value=320;
+  droneOsc.connect(droneFilter);droneFilter.connect(droneGain);droneGain.connect(audioCtx.destination);
+  droneOsc.start();droneLfo.start();
+}
+function startDrone(){
+  if(!audioCtx||droneActive)return;
+  droneActive=true;
+  const now=audioCtx.currentTime;
+  droneGain.gain.cancelScheduledValues(now);
+  droneGain.gain.setValueAtTime(droneGain.gain.value,now);
+  droneGain.gain.linearRampToValueAtTime(.13,now+1.2);
+}
+function stopDrone(){
+  if(!audioCtx||!droneActive)return;
+  droneActive=false;
+  const now=audioCtx.currentTime;
+  droneGain.gain.cancelScheduledValues(now);
+  droneGain.gain.setValueAtTime(droneGain.gain.value,now);
+  droneGain.gain.linearRampToValueAtTime(0,now+1.0);
+}
+
+// ── canvas ───────────────────────────────────────────────────────────────────
+const cv=document.getElementById('cv');
+const ctx=cv.getContext('2d');
+
+function pBounds(vw,vh){
+  const AR=4500/8000;
+  if(vw/vh>AR){const dh=vh,dw=Math.floor(dh*AR);return{dx:Math.floor((vw-dw)/2),dy:0,dw,dh};}
+  const dw=vw,dh=Math.floor(dw/AR);return{dx:0,dy:Math.floor((vh-dh)/2),dw,dh};
+}
+function setFull(){
+  VW=window.innerWidth;VH=window.innerHeight;
+  cv.width=VW;cv.height=VH;
+}
+window.addEventListener('resize',()=>{setFull();if(phase===1)initWander();});
+
+// ── wander (auto, 무한) ───────────────────────────────────────────────────────
+function initWander(){
+  const pb=pBounds(VW,VH);
+  wanderP={
+    sx:pb.dx+pb.dw*.50, sy:pb.dy+pb.dh*.50,
+    ax1:pb.dw*.30, ax2:pb.dw*.18, ax3:pb.dw*.10,
+    ay1:pb.dh*.38, ay2:pb.dh*.22, ay3:pb.dh*.10,
+    fx1:0.73, fx2:1.97, fx3:3.31,
+    fy1:1.11, fy2:2.43, fy3:0.59
+  };
+}
+function renderWander(){
+  if(!wanderP)initWander();
+  const pb=pBounds(VW,VH);
+  const{sx,sy,ax1,ax2,ax3,ay1,ay2,ay3,fx1,fx2,fx3,fy1,fy2,fy3}=wanderP;
+  const ts=phaseT/1000;
+  const wx=sx+ax1*Math.sin(fx1*ts)+ax2*Math.sin(fx2*ts)+ax3*Math.cos(fx3*ts);
+  const wy=sy+ay1*Math.cos(fy1*ts)+ay2*Math.sin(fy2*ts)+ay3*Math.sin(fy3*ts);
+  const M=30;
+  const spotX=Math.max(pb.dx+M,Math.min(pb.dx+pb.dw-M,wx));
+  const spotY=Math.max(pb.dy+M,Math.min(pb.dy+pb.dh-M,wy));
+  const spotR=SPOT_R_BASE+8*Math.sin(phaseT/300);
+  startDrone();
+
+  ctx.fillStyle='#000';ctx.fillRect(0,0,VW,VH);
+  ctx.drawImage(imgL01,pb.dx,pb.dy,pb.dw,pb.dh);
+  ctx.save();ctx.beginPath();ctx.arc(spotX,spotY,spotR,0,Math.PI*2);ctx.clip();
+  ctx.drawImage(imgL02,pb.dx,pb.dy,pb.dw,pb.dh);ctx.restore();
+  ctx.save();ctx.filter='blur(18px)';
+  const g=ctx.createRadialGradient(spotX,spotY,spotR*.65,spotX,spotY,spotR*1.2);
+  g.addColorStop(0,'rgba(255,255,255,0)');g.addColorStop(.55,'rgba(255,255,255,.45)');g.addColorStop(1,'rgba(255,255,255,0)');
+  ctx.fillStyle=g;ctx.beginPath();ctx.arc(spotX,spotY,spotR*1.2,0,Math.PI*2);ctx.fill();
+  ctx.restore();
+}
+
+function drawPrompt(alpha){
+  const pb=pBounds(VW,VH);
+  const cx=pb.dx+pb.dw/2,cy=pb.dy+pb.dh*.83,now=performance.now();
+  ctx.save();ctx.globalAlpha=alpha;
+  for(let i=0;i<3;i++){const t=((now/2200+i/3)%1);ctx.strokeStyle=`rgba(255,255,255,${(1-t)*.7})`;ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(cx,cy,14+t*54,0,Math.PI*2);ctx.stroke();}
+  ctx.fillStyle='rgba(255,255,255,.95)';ctx.beginPath();ctx.arc(cx,cy,7,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='rgba(0,0,0,.5)';ctx.beginPath();ctx.roundRect(cx-92,cy+42,184,34,5);ctx.fill();
+  ctx.font='12px Pretendard,"Pretendard Variable","Helvetica Neue",Helvetica,Arial,sans-serif';
+  ctx.fillStyle='rgba(255,255,255,.9)';ctx.textAlign='center';
+  ctx.fillText('더블클릭해보세요',cx,cy+63);ctx.restore();
+}
+
+// ── main loop ────────────────────────────────────────────────────────────────
+let _lastT=0;
+function loop(ts){
+  const dt=Math.min(ts-_lastT,50);_lastT=ts;
+  phaseT+=dt;
+  const pb=pBounds(VW,VH);
+  if(phase===0){
+    ctx.fillStyle='#000';ctx.fillRect(0,0,VW,VH);
+    ctx.drawImage(imgL01,pb.dx,pb.dy,pb.dw,pb.dh);
+    drawPrompt(Math.min(1,phaseT/1000));
+  }else{
+    renderWander();
+  }
+  requestAnimationFrame(loop);
+}
+
+// ── images ───────────────────────────────────────────────────────────────────
+const imgL01=new Image(),imgL02=new Image();
+let _loaded=0;
+function onLoad(){_loaded++;if(_loaded===2){setFull();requestAnimationFrame(loop);}}
+[imgL01,imgL02].forEach(i=>i.onload=onLoad);
+imgL01.src=SRC_L01;imgL02.src=SRC_L02;
+
+// ── events ───────────────────────────────────────────────────────────────────
+cv.addEventListener('dblclick',()=>{
+  if(audioCtx&&audioCtx.state==='suspended')audioCtx.resume();
+  if(phase===0){phase=1;phaseT=0;initWander();initAudio();}
+  else{phase=0;phaseT=0;wanderP=null;stopDrone();}
+});
+</script>
