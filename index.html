@@ -1,24 +1,13 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>COMA NOVA</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
 body{background:#000;overflow:hidden;}
 canvas{display:block;position:fixed;top:0;left:0;}
-#modeBtn{
-  position:fixed;bottom:24px;right:24px;z-index:100;
-  background:rgba(255,255,255,.08);color:#fff;
-  border:1px solid rgba(255,255,255,.22);
-  padding:9px 20px;font:11px "Helvetica Neue",sans-serif;
-  letter-spacing:2.5px;cursor:pointer;text-transform:uppercase;
-  backdrop-filter:blur(6px);transition:background .2s;user-select:none;
-  display:none;
-}
-#modeBtn:hover{background:rgba(255,255,255,.18);}
-#modeBtn.cam{border-color:rgba(255,220,80,.5);color:rgba(255,220,80,.9);}
-#camPreview{
-  position:fixed;bottom:72px;right:24px;width:128px;height:96px;
-  border:1px solid rgba(255,255,255,.18);display:none;
-  object-fit:cover;transform:scaleX(-1);opacity:.55;border-radius:2px;
-}
 #topExit{
   position:fixed;top:0;left:0;width:100%;height:26vh;z-index:60;pointer-events:none;
   background:linear-gradient(rgba(0,0,0,.88),rgba(0,0,0,0));
@@ -26,7 +15,7 @@ canvas{display:block;position:fixed;top:0;left:0;}
 }
 #topExit.show{opacity:1;}
 #closeBtn{
-  position:absolute;top:11.6vh;right:2.1vw;width:1.87vw;height:1.87vw;
+  position:absolute;top:4.5vh;right:2.1vw;width:1.87vw;height:1.87vw;
   min-width:20px;min-height:20px;
   cursor:pointer;pointer-events:none;opacity:.9;transition:opacity .2s,transform .2s;
 }
@@ -38,11 +27,34 @@ canvas{display:block;position:fixed;top:0;left:0;}
 }
 #closeBtn::before{transform:translate(-50%,-50%) rotate(45deg);}
 #closeBtn::after{transform:translate(-50%,-50%) rotate(-45deg);}
+#idleAsk{
+  position:fixed;inset:0;z-index:70;display:none;
+  align-items:center;justify-content:center;
+  background:rgba(0,0,0,.72);backdrop-filter:blur(3px);
+  font:13px "Helvetica Neue",Helvetica,Arial,sans-serif;color:#fff;
+}
+#idleAsk.show{display:flex;}
+#idleBox{text-align:center;padding:38px 46px;border:1px solid rgba(255,255,255,.16);background:rgba(0,0,0,.5);}
+#idleBox p{font-size:15px;letter-spacing:.04em;margin-bottom:10px;}
+#idleCount{font-size:11px;letter-spacing:.14em;color:rgba(255,255,255,.5);margin-bottom:26px;}
+#idleCount b{color:rgba(255,230,80,.95);font-weight:500;}
+.idleBtns{display:flex;gap:10px;justify-content:center;}
+.idleBtns button{
+  background:transparent;color:#fff;border:1px solid rgba(255,255,255,.3);
+  padding:10px 22px;font:11px "Helvetica Neue",sans-serif;letter-spacing:.16em;
+  text-transform:uppercase;cursor:pointer;transition:background .2s,border-color .2s;
+}
+.idleBtns button:hover{background:rgba(255,255,255,.12);}
+.idleBtns button.go{border-color:rgba(255,230,80,.55);color:rgba(255,230,80,.95);}
+.idleBtns button.go:hover{background:rgba(255,230,80,.14);}
 </style>
 <canvas id="cv"></canvas>
 <div id="topExit"><div id="closeBtn" title="처음으로"></div></div>
-<button id="modeBtn">CAMERA</button>
-<video id="camPreview" autoplay muted playsinline></video>
+<div id="idleAsk"><div id="idleBox">
+  <p>처음 화면으로 돌아갈까요?</p>
+  <div id="idleCount"><b>15</b>초 후 자동으로 돌아갑니다</div>
+  <div class="idleBtns"><button id="idleStay">계속 보기</button><button id="idleGo" class="go">처음으로</button></div>
+</div></div>
 <script>
 
 const SRC_L01='L01.png';
@@ -200,7 +212,6 @@ function onMouseActivity(){
 }
 
 // camera
-let camMode=false,camVideo=null,camCanvas=null,camCtx=null,faceDetector=null,camPos=null;
 
 // ── canvas ───────────────────────────────────────────────────────────────────
 const cv=document.getElementById('cv');
@@ -233,45 +244,7 @@ window.addEventListener('resize',()=>{
   else{enterW01();if(compCanvas)buildCompositeAndParticles();if(yellowDots.length)buildYellowDots();}
 });
 
-// ── camera ───────────────────────────────────────────────────────────────────
-function updateModeBtnLabel(){
-  const btn=document.getElementById('modeBtn');
-  btn.textContent=camMode?'MOUSE':'CAMERA';
-  btn.classList.toggle('cam',camMode);
-}
-async function initCamera(){
-  try{
-    const stream=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:320},height:{ideal:240},facingMode:'user'}});
-    camVideo=document.getElementById('camPreview');
-    camVideo.srcObject=stream;camVideo.style.display='block';
-    camCanvas=document.createElement('canvas');camCanvas.width=320;camCanvas.height=240;
-    camCtx=camCanvas.getContext('2d',{willReadFrequently:true});
-    if('FaceDetector'in window){try{faceDetector=new FaceDetector({fastMode:true,maxDetectedFaces:1});}catch(e){}}
-    camMode=true;updateModeBtnLabel();
-  }catch(e){alert('카메라 접근을 허용해주세요.\n(로컬 파일로 열면 작동합니다.)');}
-}
-function stopCamera(){
-  const v=document.getElementById('camPreview');
-  if(v&&v.srcObject){v.srcObject.getTracks().forEach(t=>t.stop());v.srcObject=null;}
-  if(v)v.style.display='none';
-  camMode=false;camPos=null;updateModeBtnLabel();
-}
-async function updateCamPos(){
-  if(!camMode||!camVideo||camVideo.readyState<2)return;
-  try{
-    camCtx.save();camCtx.scale(-1,1);camCtx.drawImage(camVideo,-320,0,320,240);camCtx.restore();
-    if(faceDetector){try{const faces=await faceDetector.detect(camCanvas);if(faces.length){const b=faces[0].boundingBox;camPos={x:(b.x+b.width/2)/320,y:(b.y+b.height/2)/240};return;}}catch(e){}}
-    const d=camCtx.getImageData(0,0,320,240).data;
-    let sx=0,sy=0,cnt=0;
-    for(let y=0;y<240;y+=3)for(let x=0;x<320;x+=3){
-      const i=(y*320+x)*4,r=d[i],g=d[i+1],b=d[i+2];
-      if(r>80&&g>40&&b>20&&r>g&&r>b&&r-b>15){sx+=x;sy+=y;cnt++;}
-    }
-    camPos=cnt>80?{x:sx/cnt/320,y:sy/cnt/240}:null;
-  }catch(e){camPos=null;}
-}
 function getSpotXY(){
-  if(camMode&&camPos)return{x:camPos.x*cW,y:camPos.y*cH};
   return{x:mouse.x,y:mouse.y};
 }
 
@@ -393,7 +366,7 @@ function buildCompositeAndParticles(){
 }
 
 function applyParticles(){
-  const{x:mx,y:my}=getSpotXY();const on=camMode?!!camPos:mouse.on;const R=INFLUENCE_R,R2=R*R,active=[];
+  const{x:mx,y:my}=getSpotXY();const on=mouse.on;const R=INFLUENCE_R,R2=R*R,active=[];
   for(const p of particles){
     const dx=mx-p.ox,dy=my-p.oy,d2=dx*dx+dy*dy,inZ=on&&d2<R2;
     if(inZ){const d=Math.sqrt(d2)+.1,f=Math.pow(1-d/R,1.2)*SCATTER_STR;p.vx-=(dx/d)*f;p.vy-=(dy/d)*f;p.vx+=(Math.random()-.5)*NOISE*(f/SCATTER_STR);p.vy+=(Math.random()-.5)*NOISE*(f/SCATTER_STR);p.scatterT+=(Math.pow(1-Math.sqrt(d2)/R,1.2)-p.scatterT)*.10;}
@@ -486,7 +459,7 @@ function renderZoom(now,dt){
   ctx.fillStyle='#000';ctx.fillRect(0,0,cW,cH);
   ctx.drawImage(compCanvas,ix,iy,cW*scale,cH*scale);
   tickYellowDots(dt);drawYellowDots(now,scale,ix,iy);
-  const{x:mx,y:my}=getSpotXY();const on=camMode?!!camPos:mouse.on;const R=INFLUENCE_R,active=[];
+  const{x:mx,y:my}=getSpotXY();const on=mouse.on;const R=INFLUENCE_R,active=[];
   for(const p of particles){
     const dx=mx-p.ox,dy=my-p.oy,d2=dx*dx+dy*dy,inZ=on&&d2<R*R;
     if(inZ){const d=Math.sqrt(d2)+.1,f=Math.pow(1-d/R,1.2)*SCATTER_STR;p.vx-=(dx/d)*f;p.vy-=(dy/d)*f;p.scatterT+=(Math.pow(1-d/R,1.2)-p.scatterT)*.10;}
@@ -523,10 +496,9 @@ function renderW01Intro(){
   if(lx>0&&revY<cH){ctx.save();ctx.beginPath();ctx.rect(0,revY,lx,LINE_H);ctx.clip();ctx.drawImage(imgW01,0,0,cW,cH);ctx.restore();}
   ctx.fillStyle='rgba(220,220,220,.7)';ctx.fillRect(Math.max(0,lx-1),revY,2,LINE_H);
   if(el>INTERACTIVE_T){
-    w01IntroPhase='interactive';interactiveAt=performance.now();exitDot.hover=0;
+    w01IntroPhase='interactive';interactiveAt=performance.now();exitDot.hover=0;armIdle();
     buildCompositeAndParticles();
     buildYellowDots();
-    document.getElementById('modeBtn').style.display='block';
   }
 }
 function renderW01Interactive(now,dt){
@@ -535,7 +507,7 @@ function renderW01Interactive(now,dt){
   ctx.drawImage(compCanvas,0,0,cW,cH);
   tickYellowDots(dt);drawYellowDots(now);
   applyParticles();
-  const on=camMode?!!camPos:mouse.on;
+  const on=mouse.on;
   if(on){drawSpotlight();if(mouseMoving)startDrone();}else if(!mouseMoving){stopDrone();}
   drawExitDot(now);
 }
@@ -547,7 +519,7 @@ function drawExitDot(now){
   const appear=Math.min(1,Math.max(0,(el-800)/1000));if(appear<=0)return;
   const x=cW*.045,y=cH*.92+Math.sin(now/900)*cH*.004;
   const base=Math.max(14,cW*.012);
-  const{x:sx,y:sy}=getSpotXY();const on=camMode?!!camPos:mouse.on;
+  const{x:sx,y:sy}=getSpotXY();const on=mouse.on;
   const want=(on&&Math.hypot(sx-x,sy-y)<base*3)?1:0;
   exitDot.hover+=(want-exitDot.hover)*.12;
   const h=exitDot.hover,size=base*(1+.06*Math.sin(now/380))*(1+.7*h);
@@ -566,15 +538,13 @@ function hitExitDot(cx,cy){
   return w01IntroPhase==='interactive'&&Math.hypot(cx-exitDot.x,cy-exitDot.y)<Math.max(exitDot.r*1.6,cW*.025);
 }
 function resetToStart(){
-  stopDrone();cancelTypewriter();
-  if(camMode)stopCamera();
+  stopDrone();cancelTypewriter();clearIdle();hideIdleAsk();
   zoom.active=false;zoom.progress=0;isZoomedIn=false;
   mouseMoving=false;clearTimeout(_mouseMoveTimer);
   particles=[];compCanvas=null;yellowDots=[];
   w01IntroPhase='intro';w01StartTime=0;typewriterScheduled=false;
   wanderP=null;dingPlayed=false;INFLUENCE_R=113;
   exitDot.hover=0;exitDot.x=exitDot.y=-9999;
-  document.getElementById('modeBtn').style.display='none';
   cv.style.cursor='';topShown=false;topExit.classList.remove('show');
   phase=0;phaseT=0;setFull();
 }
@@ -586,7 +556,6 @@ function loop(ts){
   if(phase<3)phaseT+=dt;  // only count phaseT for pre-W01 phases
   if(phase===3)phaseT+=dt;  // curtain timer
   const now=performance.now();
-  if(camMode)updateCamPos();
 
   if(phase===0){
     ctx.fillStyle='#000';ctx.fillRect(0,0,VW,VH);
@@ -630,7 +599,7 @@ function onLoad(){_loaded++;if(_loaded===5){setFull();requestAnimationFrame(loop
 imgL01.src=SRC_L01;imgL02.src=SRC_L02;imgW01.src=SRC_W01;imgBig.src=SRC_BIG;imgSml.src=SRC_SML;
 
 // ── events ───────────────────────────────────────────────────────────────────
-cv.addEventListener('mousemove',e=>{if(audioCtx&&audioCtx.state==='suspended')audioCtx.resume();if(phase>=3&&w01IntroPhase==='interactive')onMouseActivity();
+cv.addEventListener('mousemove',e=>{if(audioCtx&&audioCtx.state==='suspended')audioCtx.resume();if(!idleAsking)armIdle();if(phase>=3&&w01IntroPhase==='interactive')onMouseActivity();
   if(phase>=3){const r=cv.getBoundingClientRect();mouse.x=(e.clientX-r.left)*(cW/r.width);mouse.y=(e.clientY-r.top)*(cH/r.height);}
   else{mouse.x=e.clientX;mouse.y=e.clientY;}
   mouse.on=true;
@@ -641,6 +610,7 @@ cv.addEventListener('mouseleave',()=>mouse.on=false);
 window.addEventListener('wheel',e=>{
   if(phase!==4||w01IntroPhase!=='interactive')return;
   e.preventDefault();
+  if(!idleAsking)armIdle();
   INFLUENCE_R=Math.max(38,Math.min(313,INFLUENCE_R+(e.deltaY>0?-8:8)));
   if(droneActive)startDrone(); // 볼륨 즉시 반영
 },{passive:false});
@@ -654,6 +624,28 @@ cv.addEventListener('dblclick',e=>{
     if(!isZoomedIn){startZoomIn(cx,cy);isZoomedIn=true;playWhoosh(1);}else{startZoomOut();isZoomedIn=false;playWhoosh(-1);}
   }
 });
+
+const idleAsk=document.getElementById('idleAsk'),idleCountEl=document.querySelector('#idleCount b');
+const IDLE_MS=60000,IDLE_ANSWER_S=15;
+let _idleTimer=null,_idleTick=null,idleAsking=false;
+function idleActive(){return phase===4&&w01IntroPhase==='interactive';}
+function clearIdle(){clearTimeout(_idleTimer);_idleTimer=null;clearInterval(_idleTick);_idleTick=null;}
+function hideIdleAsk(){idleAsking=false;idleAsk.classList.remove('show');}
+function armIdle(){
+  clearIdle();if(idleAsking||!idleActive())return;
+  _idleTimer=setTimeout(showIdleAsk,IDLE_MS);
+}
+function showIdleAsk(){
+  if(!idleActive())return;
+  idleAsking=true;idleAsk.classList.add('show');
+  let left=IDLE_ANSWER_S;idleCountEl.textContent=left;
+  _idleTick=setInterval(()=>{
+    left--;idleCountEl.textContent=Math.max(0,left);
+    if(left<=0){clearIdle();hideIdleAsk();playDing();resetToStart();}
+  },1000);
+}
+document.getElementById('idleStay').addEventListener('click',e=>{e.stopPropagation();clearIdle();hideIdleAsk();armIdle();});
+document.getElementById('idleGo').addEventListener('click',e=>{e.stopPropagation();clearIdle();hideIdleAsk();playDing();resetToStart();});
 
 const topExit=document.getElementById('topExit');
 let _topTimer=null,_topHideTimer=null,topShown=false;
@@ -670,9 +662,5 @@ window.addEventListener('mousemove',e=>{
 document.getElementById('closeBtn').addEventListener('click',e=>{
   e.stopPropagation();topShown=false;topExit.classList.remove('show');
   if(phase!==0){playDing();resetToStart();}
-});
-document.getElementById('modeBtn').addEventListener('click',e=>{
-  e.stopPropagation();
-  if(camMode)stopCamera();else initCamera();
 });
 </script>
