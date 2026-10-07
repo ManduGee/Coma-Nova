@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <title>COMA NOVA</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
@@ -31,22 +32,22 @@ canvas{display:block;position:fixed;top:0;left:0;}
   position:fixed;inset:0;z-index:70;display:none;
   align-items:center;justify-content:center;
   background:rgba(0,0,0,.72);backdrop-filter:blur(3px);
-  font:13px "Helvetica Neue",Helvetica,Arial,sans-serif;color:#fff;
+  font:13px Pretendard,"Pretendard Variable",-apple-system,"Apple SD Gothic Neo","Helvetica Neue",sans-serif;color:#fff;
 }
 #idleAsk.show{display:flex;}
-#idleBox{text-align:center;padding:38px 46px;border:1px solid rgba(255,255,255,.16);background:rgba(0,0,0,.5);}
-#idleBox p{font-size:15px;letter-spacing:.04em;margin-bottom:10px;}
+#idleBox{text-align:center;padding:38px 46px;border:1px solid rgba(238,255,0,.22);background:rgba(0,0,0,.5);}
+#idleBox p{font-size:16px;font-weight:600;letter-spacing:.01em;color:#EEFF00;margin-bottom:10px;}
 #idleCount{font-size:11px;letter-spacing:.14em;color:rgba(255,255,255,.5);margin-bottom:26px;}
-#idleCount b{color:rgba(255,230,80,.95);font-weight:500;}
+#idleCount b{color:#EEFF00;font-weight:600;}
 .idleBtns{display:flex;gap:10px;justify-content:center;}
 .idleBtns button{
   background:transparent;color:#fff;border:1px solid rgba(255,255,255,.3);
-  padding:10px 22px;font:11px "Helvetica Neue",sans-serif;letter-spacing:.16em;
+  padding:10px 22px;font:600 11px Pretendard,"Pretendard Variable",-apple-system,sans-serif;letter-spacing:.16em;
   text-transform:uppercase;cursor:pointer;transition:background .2s,border-color .2s;
 }
 .idleBtns button:hover{background:rgba(255,255,255,.12);}
-.idleBtns button.go{border-color:rgba(255,230,80,.55);color:rgba(255,230,80,.95);}
-.idleBtns button.go:hover{background:rgba(255,230,80,.14);}
+.idleBtns button.go{border-color:rgba(238,255,0,.6);color:#EEFF00;}
+.idleBtns button.go:hover{background:rgba(238,255,0,.14);}
 </style>
 <canvas id="cv"></canvas>
 <div id="topExit"><div id="closeBtn" title="처음으로"></div></div>
@@ -626,7 +627,7 @@ cv.addEventListener('dblclick',e=>{
 });
 
 const idleAsk=document.getElementById('idleAsk'),idleCountEl=document.querySelector('#idleCount b');
-const IDLE_MS=60000,IDLE_ANSWER_S=15;
+const IDLE_MS=30000,IDLE_ANSWER_S=15;
 let _idleTimer=null,_idleTick=null,idleAsking=false;
 function idleActive(){return phase===4&&w01IntroPhase==='interactive';}
 function clearIdle(){clearTimeout(_idleTimer);_idleTimer=null;clearInterval(_idleTick);_idleTick=null;}
