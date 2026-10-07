@@ -143,10 +143,10 @@ function drawSpotlight(){
   const gG=ctx.createRadialGradient(rmx,rmy,R*.5,rmx,rmy,R*1.08);
   gG.addColorStop(0,'rgba(255,255,255,0)');gG.addColorStop(.6,'rgba(255,255,255,.45)');gG.addColorStop(1,'rgba(255,255,255,0)');
   ctx.fillStyle=gG;ctx.beginPath();ctx.arc(rmx,rmy,R*1.08,0,Math.PI*2);ctx.fill();ctx.restore();
-  const cG=ctx.createRadialGradient(rmx,rmy,0,rmx,rmy,R*.78);
-  cG.addColorStop(0,'rgba(255,255,255,.30)');cG.addColorStop(.45,'rgba(255,255,255,.20)');
-  cG.addColorStop(.8,'rgba(255,255,255,.07)');cG.addColorStop(1,'rgba(255,255,255,0)');
-  ctx.fillStyle=cG;ctx.beginPath();ctx.arc(rmx,rmy,R*.78,0,Math.PI*2);ctx.fill();
+  const cG=ctx.createRadialGradient(rmx,rmy,0,rmx,rmy,R*.72);
+  cG.addColorStop(0,'rgba(255,255,255,1)');cG.addColorStop(.32,'rgba(255,255,255,1)');
+  cG.addColorStop(.6,'rgba(255,255,255,.85)');cG.addColorStop(.85,'rgba(255,255,255,.3)');cG.addColorStop(1,'rgba(255,255,255,0)');
+  ctx.fillStyle=cG;ctx.beginPath();ctx.arc(rmx,rmy,R*.72,0,Math.PI*2);ctx.fill();
 }
 
 function renderInteractive(){
