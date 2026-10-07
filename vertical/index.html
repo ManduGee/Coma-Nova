@@ -212,7 +212,7 @@ window.addEventListener('wheel',e=>{
   if(droneActive)startDrone();
 },{passive:false});
 
-cv.addEventListener('dblclick',()=>{
+window.addEventListener('dblclick',()=>{
   if(audioCtx&&audioCtx.state==='suspended')audioCtx.resume();
   if(phase===0){initAudio();buildLayers();phase=1;phaseT=0;}
   else{phase=0;phaseT=0;stopDrone();particles=[];INFLUENCE_R=113;}
