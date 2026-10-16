@@ -20,6 +20,15 @@ const DOT_SPACING=2,SCATTER_STR=5.5,DAMPING=.90,SPRING=.085,NOISE=.45;
 const PARTICLE_DENSITY=.667;
 let INFLUENCE_R=113;
 
+// 녹화용: ?record 로 열면 시작 20초 뒤 1초에 걸쳐 암전
+const RECORD=new URLSearchParams(location.search).has('record');
+const FADE_START=20000,FADE_DUR=1000;
+let fadeStarted=false,motionStart=0;
+function fadeAmount(){
+  if(!RECORD||phase!==1||!motionStart)return 0;
+  return Math.min(1,Math.max(0,(performance.now()-motionStart-FADE_START)/FADE_DUR));
+}
+
 let cW=0,cH=0;
 // phases: 0=intro  1=interactive
 let phase=0,phaseT=0;
@@ -46,7 +55,7 @@ function droneTargetGain(){
   return 0.02+(INFLUENCE_R-38)/(313-38)*0.33;
 }
 function startDrone(){
-  if(!audioCtx)return;
+  if(!audioCtx||fadeStarted)return;
   const target=droneTargetGain(),now=audioCtx.currentTime;
   droneGain.gain.cancelScheduledValues(now);
   droneGain.gain.setValueAtTime(droneGain.gain.value,now);
@@ -60,6 +69,14 @@ function stopDrone(){
   droneGain.gain.cancelScheduledValues(now);
   droneGain.gain.setValueAtTime(droneGain.gain.value,now);
   droneGain.gain.linearRampToValueAtTime(0,now+0.18);
+}
+function fadeOutDrone(ms){
+  if(!audioCtx||!droneActive)return;
+  droneActive=false;
+  const now=audioCtx.currentTime;
+  droneGain.gain.cancelScheduledValues(now);
+  droneGain.gain.setValueAtTime(droneGain.gain.value,now);
+  droneGain.gain.linearRampToValueAtTime(0,now+ms/1000);
 }
 let mouseMoving=false,_mouseMoveTimer=null;
 function onMouseActivity(){
@@ -203,6 +220,11 @@ function loop(ts){
     drawPrompt(Math.min(1,phaseT/1000));
   }else{
     renderInteractive();
+    const f=fadeAmount();
+    if(f>0){
+      if(!fadeStarted){fadeStarted=true;fadeOutDrone(FADE_DUR);}
+      ctx.fillStyle=`rgba(0,0,0,${f})`;ctx.fillRect(0,0,cW,cH);
+    }
   }
   requestAnimationFrame(loop);
 }
@@ -235,7 +257,7 @@ window.addEventListener('wheel',e=>{
 
 window.addEventListener('dblclick',()=>{
   if(audioCtx&&audioCtx.state==='suspended')audioCtx.resume();
-  if(phase===0){initAudio();buildLayers();phase=1;phaseT=0;}
-  else{phase=0;phaseT=0;stopDrone();particles=[];INFLUENCE_R=113;}
+  if(phase===0){initAudio();buildLayers();phase=1;phaseT=0;motionStart=performance.now();}
+  else{phase=0;phaseT=0;stopDrone();particles=[];INFLUENCE_R=113;fadeStarted=false;motionStart=0;}
 });
 </script>
