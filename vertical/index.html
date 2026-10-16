@@ -34,7 +34,7 @@ let cW=0,cH=0;
 // phases: 0=intro  1=interactive
 let phase=0,phaseT=0;
 const mouse={x:-9999,y:-9999,on:false};
-let particles=[],baseCanvas=null,coverCanvas=null,typeStart=0;
+let particles=[],baseCanvas=null,typeStart=0;
 
 // ── audio ─────────────────────────────────────────────────────────────────────
 let audioCtx=null,droneGain=null,droneOsc=null,droneLfo=null,droneActive=false;
@@ -102,30 +102,16 @@ function setFull(){
 }
 function relayout(){
   setFull();
-  if(_loaded===2){buildCover();if(phase===2)buildLayers();}
+  if(_loaded===2&&phase===2)buildLayers();
 }
 window.addEventListener('resize',relayout);
 
 // ── layers & particles ────────────────────────────────────────────────────────
 function mixedColor(p){const t=p.mixR;return{r:Math.round(p.r+(255-p.r)*t),g:Math.round(p.g+(255-p.g)*t),b:Math.round(p.b+(255-p.b)*t)};}
 
-// 포스터는 불투명 검정이라 그대로 덮으면 타이포를 가린다.
-// 어두운 픽셀의 알파를 깎아 노란 요소만 앞에 남긴다(경계는 밝기 비례로 부드럽게).
-function buildCover(){
-  coverCanvas=document.createElement('canvas');coverCanvas.width=cW;coverCanvas.height=cH;
-  const g=coverCanvas.getContext('2d',{willReadFrequently:true});
-  g.drawImage(imgBlack,0,0,cW,cH);
-  const im=g.getImageData(0,0,cW,cH),d=im.data;
-  for(let i=0;i<d.length;i+=4){
-    const lum=.299*d[i]+.587*d[i+1]+.114*d[i+2];
-    if(lum<40)d[i+3]=Math.round(d[i+3]*(lum/40));
-  }
-  g.putImageData(im,0,0);
-}
 function paintComposite(g){
   g.fillStyle='#000';g.fillRect(0,0,cW,cH);
   g.drawImage(imgTypo,0,0,cW,cH);
-  g.drawImage(coverCanvas,0,0);
 }
 function buildLayers(){
   baseCanvas=document.createElement('canvas');baseCanvas.width=cW;baseCanvas.height=cH;
@@ -199,12 +185,12 @@ function renderInteractive(){
 // 가로형과 같은 타자 연출 — 블랙포스터 위로 회색 본문이 한 줄씩 찍힌다
 function renderTyping(){
   ctx.fillStyle='#000';ctx.fillRect(0,0,cW,cH);
+  ctx.drawImage(imgBlack,0,0,cW,cH);
   const el=performance.now()-typeStart,prog=Math.min(1,el/TYPE_DUR);
   const lp=prog*Math.ceil(cH/LINE_H),curLine=Math.floor(lp),lx=(lp-curLine)*cW,revY=curLine*LINE_H;
   if(revY>0){ctx.save();ctx.beginPath();ctx.rect(0,0,cW,revY);ctx.clip();ctx.drawImage(imgTypo,0,0,cW,cH);ctx.restore();}
   if(lx>0&&revY<cH){ctx.save();ctx.beginPath();ctx.rect(0,revY,lx,LINE_H);ctx.clip();ctx.drawImage(imgTypo,0,0,cW,cH);ctx.restore();}
   if(revY<cH){ctx.fillStyle='rgba(220,220,220,.7)';ctx.fillRect(Math.max(0,lx-1),revY,2,LINE_H);}
-  ctx.drawImage(coverCanvas,0,0);
   if(prog>=1){buildLayers();phase=2;}
 }
 
@@ -226,7 +212,7 @@ function loop(ts){
   phaseT+=dt;
   if(phase===0){
     ctx.fillStyle='#000';ctx.fillRect(0,0,cW,cH);
-    ctx.drawImage(coverCanvas,0,0);
+    ctx.drawImage(imgBlack,0,0,cW,cH);
     drawPrompt(Math.min(1,phaseT/1000));
   }else{
     if(phase===1)renderTyping();else renderInteractive();
@@ -242,7 +228,7 @@ function loop(ts){
 // ── images ───────────────────────────────────────────────────────────────────
 const imgBlack=new Image(),imgTypo=new Image();
 let _loaded=0;
-function onLoad(){_loaded++;if(_loaded===2){setFull();buildCover();requestAnimationFrame(loop);}}
+function onLoad(){_loaded++;if(_loaded===2){setFull();requestAnimationFrame(loop);}}
 [imgBlack,imgTypo].forEach(i=>i.onload=onLoad);
 imgBlack.src=SRC_BLACK;imgTypo.src=SRC_TYPO;
 
