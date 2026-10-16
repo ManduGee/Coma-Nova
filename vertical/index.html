@@ -13,8 +13,9 @@ canvas{display:block;position:fixed;top:0;left:0;}
 </head>
 <canvas id="cv"></canvas>
 <script>
-const SRC_L01='../L01.png';
-const SRC_L02='../L02.png';
+const SRC_BLACK='../black_poster.png';
+const SRC_TYPO='../background_typo.png';
+const LINE_H=18,TYPE_DUR=3000;
 
 const DOT_SPACING=2,SCATTER_STR=5.5,DAMPING=.90,SPRING=.085,NOISE=.45;
 const PARTICLE_DENSITY=.667;
@@ -25,7 +26,7 @@ const RECORD=new URLSearchParams(location.search).has('record');
 const FADE_START=20000,FADE_DUR=1000;
 let fadeStarted=false,motionStart=0;
 function fadeAmount(){
-  if(!RECORD||phase!==1||!motionStart)return 0;
+  if(!RECORD||phase<1||!motionStart)return 0;
   return Math.min(1,Math.max(0,(performance.now()-motionStart-FADE_START)/FADE_DUR));
 }
 
@@ -33,7 +34,7 @@ let cW=0,cH=0;
 // phases: 0=intro  1=interactive
 let phase=0,phaseT=0;
 const mouse={x:-9999,y:-9999,on:false};
-let particles=[],baseCanvas=null,revealCanvas=null;
+let particles=[],baseCanvas=null,typeStart=0;
 
 // ── audio ─────────────────────────────────────────────────────────────────────
 let audioCtx=null,droneGain=null,droneOsc=null,droneLfo=null,droneActive=false;
@@ -99,22 +100,22 @@ function setFull(){
   cW=pb.dw;cH=pb.dh;cv.width=cW;cv.height=cH;
   cv.style.cssText=`display:block;position:fixed;top:${pb.dy}px;left:${pb.dx}px;`;
 }
-window.addEventListener('resize',()=>{setFull();if(phase===1)buildLayers();});
+window.addEventListener('resize',()=>{setFull();if(phase===2)buildLayers();});
 
 // ── layers & particles ────────────────────────────────────────────────────────
 function mixedColor(p){const t=p.mixR;return{r:Math.round(p.r+(255-p.r)*t),g:Math.round(p.g+(255-p.g)*t),b:Math.round(p.b+(255-p.b)*t)};}
 
-function layerOf(img){
-  const c=document.createElement('canvas');c.width=cW;c.height=cH;
-  const g=c.getContext('2d');g.fillStyle='#000';g.fillRect(0,0,cW,cH);g.drawImage(img,0,0,cW,cH);
-  return c;
+function paintComposite(g){
+  g.fillStyle='#000';g.fillRect(0,0,cW,cH);
+  g.drawImage(imgBlack,0,0,cW,cH);
+  g.drawImage(imgTypo,0,0,cW,cH);
 }
 function buildLayers(){
-  baseCanvas=layerOf(imgL01);
-  revealCanvas=layerOf(imgL02);
+  baseCanvas=document.createElement('canvas');baseCanvas.width=cW;baseCanvas.height=cH;
+  paintComposite(baseCanvas.getContext('2d'));
   const sc=document.createElement('canvas');sc.width=cW;sc.height=cH;
   const sctx=sc.getContext('2d',{willReadFrequently:true});
-  sctx.fillStyle='#000';sctx.fillRect(0,0,cW,cH);sctx.drawImage(imgL02,0,0,cW,cH);
+  paintComposite(sctx);
   const d=sctx.getImageData(0,0,cW,cH).data;
   particles=[];
   for(let y=0;y<cH;y+=DOT_SPACING)for(let x=0;x<cW;x+=DOT_SPACING){
@@ -171,31 +172,23 @@ function drawSpotlight(){
   ctx.restore();
 }
 
-// 손전등처럼 가장자리가 번지도록, 오프스크린에서 L02를 방사형 알파로 깎아낸 뒤 합성
-let maskCanvas=null,maskCtx=null;
-function drawSoftReveal(){
-  const R=INFLUENCE_R,pad=Math.ceil(R*1.3),size=pad*2;
-  if(!maskCanvas){maskCanvas=document.createElement('canvas');maskCtx=maskCanvas.getContext('2d');}
-  if(maskCanvas.width!==size){maskCanvas.width=size;maskCanvas.height=size;}
-  const ox=mouse.x-pad,oy=mouse.y-pad;
-  maskCtx.clearRect(0,0,size,size);
-  maskCtx.drawImage(revealCanvas,-ox,-oy);
-  maskCtx.globalCompositeOperation='destination-in';
-  const g=maskCtx.createRadialGradient(pad,pad,0,pad,pad,R*1.22);
-  g.addColorStop(0,'rgba(0,0,0,1)');g.addColorStop(.42,'rgba(0,0,0,1)');
-  g.addColorStop(.60,'rgba(0,0,0,.80)');g.addColorStop(.76,'rgba(0,0,0,.46)');
-  g.addColorStop(.90,'rgba(0,0,0,.16)');g.addColorStop(1,'rgba(0,0,0,0)');
-  maskCtx.fillStyle=g;maskCtx.fillRect(0,0,size,size);
-  maskCtx.globalCompositeOperation='source-over';
-  ctx.drawImage(maskCanvas,ox,oy);
-}
-
 function renderInteractive(){
   ctx.fillStyle='#000';ctx.fillRect(0,0,cW,cH);
   ctx.drawImage(baseCanvas,0,0);
-  if(mouse.on)drawSoftReveal();
   applyParticles();
   if(mouse.on)drawSpotlight();
+}
+
+// 가로형과 같은 타자 연출 — 블랙포스터 위로 회색 본문이 한 줄씩 찍힌다
+function renderTyping(){
+  ctx.fillStyle='#000';ctx.fillRect(0,0,cW,cH);
+  ctx.drawImage(imgBlack,0,0,cW,cH);
+  const el=performance.now()-typeStart,prog=Math.min(1,el/TYPE_DUR);
+  const lp=prog*Math.ceil(cH/LINE_H),curLine=Math.floor(lp),lx=(lp-curLine)*cW,revY=curLine*LINE_H;
+  if(revY>0){ctx.save();ctx.beginPath();ctx.rect(0,0,cW,revY);ctx.clip();ctx.drawImage(imgTypo,0,0,cW,cH);ctx.restore();}
+  if(lx>0&&revY<cH){ctx.save();ctx.beginPath();ctx.rect(0,revY,lx,LINE_H);ctx.clip();ctx.drawImage(imgTypo,0,0,cW,cH);ctx.restore();}
+  if(revY<cH){ctx.fillStyle='rgba(220,220,220,.7)';ctx.fillRect(Math.max(0,lx-1),revY,2,LINE_H);}
+  if(prog>=1){buildLayers();phase=2;}
 }
 
 function drawPrompt(alpha){
@@ -216,10 +209,10 @@ function loop(ts){
   phaseT+=dt;
   if(phase===0){
     ctx.fillStyle='#000';ctx.fillRect(0,0,cW,cH);
-    ctx.drawImage(imgL01,0,0,cW,cH);
+    ctx.drawImage(imgBlack,0,0,cW,cH);
     drawPrompt(Math.min(1,phaseT/1000));
   }else{
-    renderInteractive();
+    if(phase===1)renderTyping();else renderInteractive();
     const f=fadeAmount();
     if(f>0){
       if(!fadeStarted){fadeStarted=true;fadeOutDrone(FADE_DUR);}
@@ -230,11 +223,11 @@ function loop(ts){
 }
 
 // ── images ───────────────────────────────────────────────────────────────────
-const imgL01=new Image(),imgL02=new Image();
+const imgBlack=new Image(),imgTypo=new Image();
 let _loaded=0;
 function onLoad(){_loaded++;if(_loaded===2){setFull();requestAnimationFrame(loop);}}
-[imgL01,imgL02].forEach(i=>i.onload=onLoad);
-imgL01.src=SRC_L01;imgL02.src=SRC_L02;
+[imgBlack,imgTypo].forEach(i=>i.onload=onLoad);
+imgBlack.src=SRC_BLACK;imgTypo.src=SRC_TYPO;
 
 // ── events ───────────────────────────────────────────────────────────────────
 cv.addEventListener('mousemove',e=>{
@@ -243,13 +236,13 @@ cv.addEventListener('mousemove',e=>{
   mouse.x=(e.clientX-r.left)*(cW/r.width);
   mouse.y=(e.clientY-r.top)*(cH/r.height);
   mouse.on=true;
-  if(phase===1)onMouseActivity();
+  if(phase===2)onMouseActivity();
 });
 cv.addEventListener('mouseenter',()=>mouse.on=true);
 cv.addEventListener('mouseleave',()=>{mouse.on=false;stopDrone();});
 
 window.addEventListener('wheel',e=>{
-  if(phase!==1)return;
+  if(phase!==2)return;
   e.preventDefault();
   INFLUENCE_R=Math.max(38,Math.min(313,INFLUENCE_R+(e.deltaY>0?-8:8)));
   if(droneActive)startDrone();
@@ -257,7 +250,7 @@ window.addEventListener('wheel',e=>{
 
 window.addEventListener('dblclick',()=>{
   if(audioCtx&&audioCtx.state==='suspended')audioCtx.resume();
-  if(phase===0){initAudio();buildLayers();phase=1;phaseT=0;motionStart=performance.now();}
+  if(phase===0){initAudio();phase=1;phaseT=0;typeStart=performance.now();motionStart=typeStart;}
   else{phase=0;phaseT=0;stopDrone();particles=[];INFLUENCE_R=113;fadeStarted=false;motionStart=0;}
 });
 </script>
